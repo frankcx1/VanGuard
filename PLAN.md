@@ -194,9 +194,11 @@ tokens, leaving room for history.
 
 ```
   Shunt 300 ──BLE──┐
-                   ├──> poller (bleak, asyncio) ──> SQLite (WAL)
-  DCC50S ──BT-2────┘                                    │
-                                                        v
+                   ├──┐
+  DCC50S ──BT-2────┘  │
+                      ├──> [ TelemetrySource ] ──> poller ──> SQLite (WAL)
+  sim / replay ───────┘         (swappable)                       │
+                                                                  v
                                    FastAPI ──> /api/telemetry/*  ──> dashboard (SPA)
                                         │
                                         └──> /v1/chat/completions ──> OpenVINO GenAI
@@ -206,6 +208,66 @@ tokens, leaving room for history.
 
 Two processes: `vanguard-poller` and `vanguard-api`. Keeping the poller separate
 means a crashed model service never costs us telemetry history.
+
+### Telemetry source abstraction — the POC hinge
+
+Everything downstream of `TelemetrySource` is identical whether the numbers come
+from a real shunt or a simulator. Three implementations behind one interface:
+
+- **`LiveSource`** — BLE, the real thing. Requires M1 to pass.
+- **`SimSource`** — physically-modelled synthetic van. No hardware at all.
+- **`ReplaySource`** — plays back a recorded `.jsonl` capture at 1× or N×.
+
+Selected by `config/devices.yaml: source: live|sim|replay`. This is not
+scaffolding to be thrown away — it's how we get deterministic test fixtures,
+how the demo survives a BLE dropout on camera, and how the whole app gets built
+and filmed before the BT-2 arrives.
+
+**Integrity guardrail:** when `source != live`, the dashboard renders a
+persistent **`SIM`** badge and the API stamps `"simulated": true` on every
+payload. Non-negotiable — a screenshot of this thing must never be able to
+misrepresent itself as live van data.
+
+### Making the simulator look real
+
+Fake telemetry reads as fake when it's smooth. Real telemetry is steppy, noisy,
+and quantized. The sim must model:
+
+- **Battery as coulomb counter.** SOC integrates net current over time — it is
+  never set directly. Everything else follows from that.
+- **A real LiFePO4 voltage curve**, not a linear ramp. The curve is famously
+  flat: ~13.4V resting at 100%, ~13.1V at 50%, ~12.9V at 20%, then a cliff.
+  Charging pushes to 14.4V bulk → absorption → ~13.6V float. A linear V-vs-SOC
+  ramp is the single most obvious tell to anyone who knows these batteries.
+- **Voltage sag under load**, proportional to current draw, recovering on release.
+- **Solar as a bell curve** over the day, scaled by a weather factor and panel
+  derate. Anchor to reality: the forum screenshot in `Renogy and Power/` shows
+  this van's actual observed Pmax at **200–300W** against 400W nominal. Peak
+  the sim there, not at 400W.
+- **Fridge duty cycling.** The Alpicool C40 compressor pulls ~45–60W and cycles
+  roughly 30–50% depending on ambient. This is what makes a load graph *look*
+  right — a sawtooth, not a flat line.
+- **Discrete load events**: cooktop 1500W AC (≈1700W DC after inverter losses,
+  ~133A at 12.8V), water pump bursts, MaxxFan, lights.
+- **Sensor noise and quantization** matched to the real devices' resolution.
+
+**Scenario presets** — the part that actually matters for filming, because you
+cannot wait for the battery to reach 40% at dusk to shoot a take:
+
+| Preset | State | Purpose |
+|---|---|---|
+| `sunny_midday` | SOC 85%, 290W PV, light load | dashboard hero shot |
+| `dusk_low` | SOC 42%, 0W PV, 35W base load | **the cooktop question** |
+| `overnight_drain` | SOC falling, no PV | time-to-empty tile |
+| `shore_power` | charging, loads underivable | proves the honest "unavailable" state |
+| `cloudy_marginal` | SOC 30%, intermittent PV | the answer should be *no* |
+
+Scenarios are seeded and deterministic, so a take is **reproducible** — you can
+re-shoot the same shot and get the same numbers.
+
+**Upgrade path:** once M1 passes, record 48h of real telemetry to a capture file
+and drive `ReplaySource` from that. The demo then runs on genuine van data,
+merely time-shifted — maximum realism, zero fabrication.
 
 ### Repo layout
 
@@ -217,10 +279,17 @@ VanGuard/
   config/
     devices.yaml          <- BLE MACs, poll cadence, model id, device order
   poller/
-    ble.py                <- bleak transport
+    source.py             <- TelemetrySource interface
+    ble.py                <- LiveSource: bleak transport
     renogy_shunt.py       <- Shunt 300 parser
     renogy_dcc50s.py      <- DCC50S Modbus-over-BLE register map
     store.py              <- SQLite writer, downsampling
+  sim/
+    van_model.py          <- SimSource: coulomb counting, LiFePO4 curve, solar
+    loads.py              <- fridge duty cycle, cooktop, pump, fan
+    scenarios.py          <- seeded presets (dusk_low, sunny_midday, ...)
+    replay.py             <- ReplaySource: playback of recorded captures
+    captures/             <- recorded .jsonl telemetry (real, once M1 passes)
   api/
     main.py               <- FastAPI, telemetry routes
     chat.py               <- OpenAI-compatible proxy
@@ -276,10 +345,43 @@ and the BLE transport is read-only by construction in v1.
 
 ## 8. Milestones
 
-Renumbered from the brief to put the hardware reality check first.
+Two tracks. **Track P runs to completion without any van hardware** and produces
+a filmable system. Track M swaps in real telemetry. They converge at M2.
 
 **M0 — Verified plan.** This document. Repo initialized, first commit before
 any code. *Done.*
+
+---
+
+### Track P — POC / demo build (no hardware required)
+
+Runs entirely on the Surface Pro. Nothing here waits on the BT-2 or on van
+access. This is the initial MVP and the thing that gets filmed.
+
+**P1 — Simulator + storage.** `SimSource` with the physical model from §7,
+scenario presets, SQLite schema, downsampling, derived metrics. Verify by eye
+that a 24h run produces a plausible-looking graph — flat LiFePO4 voltage curve,
+sawtooth fridge load, solar bell peaking ~290W.
+
+**P2 — Dashboard.** The real dashboard, dark, big tiles, 24h sparklines, `SIM`
+badge. Because P1 sits behind `TelemetrySource`, this is the *final* dashboard,
+not a mockup — it will light up on live data unchanged.
+
+**P3 — Inference. The NPU story, and it is 100% real.**
+Confirm OpenVINO enumerates `NPU`. Export INT4. Benchmark NPU vs GPU vs CPU:
+tokens/sec, TTFT, watts. Write BENCHMARKS.md.
+**Nothing about this milestone is simulated** — real model, real NPU, real
+silicon, real numbers. The van's telemetry source is irrelevant to it.
+
+**P4 — Chat + tools against the simulator.** Full tool-calling loop, audit log,
+audit view. The cooktop question answers correctly against `dusk_low` with the
+math shown. End-to-end system, one adapter short of live.
+
+**→ Filmable here.** See §8.1.
+
+---
+
+### Track M — Live hardware
 
 **M1 — Hardware handshake. THE GATE.**
 Prove one real number arrives from real hardware, on the Surface Pro, in the van.
@@ -292,33 +394,71 @@ Prove one real number arrives from real hardware, on the Surface Pro, in the van
 - Read PV watts from the DCC50S via BT-2
 - Confirm both can be polled in the same round-robin
 
-If M1 fails, the project changes shape — see §9. **No model work before M1 passes.**
+If M1 fails, the project changes shape — see §9. Track P is unaffected either
+way, which is the point of building it first.
 
-**M2 — Poller + storage.** asyncio poller, **20–30s cadence** (not the brief's
-5–10s; BLE must round-robin sequentially and a van has no need for faster).
-SQLite WAL, downsampling, derived metrics.
+**M2 — Live poller.** Implement `LiveSource` against the same interface P1
+already proved. asyncio, **20–30s cadence** (not the brief's 5–10s; BLE must
+round-robin sequentially and a van has no need for faster). Flip
+`source: live` and the dashboard, tools, and chat from Track P light up
+unchanged. Cross-check every value against the DC Home app before trusting it.
 
-**M3 — Dashboard.** Single-page, dark, big tiles for a 13" touch screen at
-arm's length: SOC, solar in, load out, net flow, time-to-empty. 24h sparklines.
+**M3 — Record the replay corpus.** Capture 48h of real telemetry to
+`sim/captures/`. From here the demo can run on genuine van data, time-shifted.
 
-**M4 — Inference.** Verify OpenVINO sees the NPU. Export INT4. Benchmark
-NPU vs GPU vs CPU: tokens/sec, TTFT, and watts. Write BENCHMARKS.md.
-
-**M5 — Chat + tools over live data.** The cooktop question answers correctly
-with the math shown. Audit log populated and visible in the dashboard.
-
-**M6 — Kiosk, mount, capture.** Edge kiosk mode, 12V feed, footage in the can.
+**M4 — Kiosk, mount, capture.** Edge kiosk mode, 12V USB-C PD feed, mounted,
+in-van footage.
 
 **Stretch:** local STT voice input, offline solar forecast, water bowl sensor.
 
+---
+
+## 8.1 What can be filmed, and when
+
+The brief's beat sheet splits cleanly. Three of five beats need **no van at
+all** — they need the Pro and a working system, which is exactly what Track P
+delivers.
+
+| Beat | Needs | Film after |
+|---|---|---|
+| 3. Build montage (20s) — data flowing, model loading, terminal benchmarks | Pro only | **P3** |
+| 4. Governance flex (5s) — "sees everything, touches nothing", audit log | Pro only | **P4** |
+| Benchmark overlay graphic — "one question costs X watt-hours" | Pro only | **P3** |
+| 1. Cold open (3s) — cooktop question answered | Pro + van interior shot | P4 for the answer, van for the setting |
+| 2. Reveal (8s) — pan to campsite, "no signal" | Van + location | M4 |
+| 5. Kicker (5s) | Van + location | M4 |
+
+**On honesty in the edit.** The NPU story is genuinely real at P3 — the model,
+the silicon, the tokens/sec, the watt-hours are all measured, not staged. Only
+the *battery numbers* are synthetic, and only until M2. So:
+
+- Shoot the build montage, the benchmark overlay, and the governance beat now.
+  Nothing in them is simulated.
+- The cold open makes a claim about **live van data**. Shoot it after M2, or
+  after M3 with a real recorded capture driving replay. Do not shoot the cold
+  open against `SimSource` and present it as live.
+
+The `SIM` badge exists partly so this line can never be crossed by accident on
+camera.
+
+**Watt-hours per query** is measurable at P3 without the van: benchmark loop on
+battery power, read the Pro's own battery drain via
+`Get-CimInstance -Namespace root\wmi BatteryStatus`. Once M2 lands, re-measure
+via the van's shunt — the system measuring its own cost of thinking through its
+own telemetry pipeline, which is the better version of the shot.
+
 ### Machine split
 
-Work that can happen on **this desktop now**: repo scaffolding, dashboard,
-SQLite layer, tool implementations, parser code written against recorded
-fixtures, model export (INT4 conversion is CPU/RAM work).
+Work that can happen on **this desktop now**: all of P1 and P2 (simulator,
+storage, dashboard), tool implementations, parser code against fixtures, and
+model export (INT4 conversion is CPU/RAM work, no NPU needed).
 
-Work that **must happen on the Surface Pro**: everything in M1 (BLE hardware),
-NPU compilation and benchmarking, kiosk mode, all capture.
+Work that **must happen on the Surface Pro**: P3 and P4 (NPU compilation,
+benchmarking, and the filmed inference story), all of M1/M2 (BLE hardware),
+kiosk mode, and all capture.
+
+Since Track P is the filming target and P3 is Pro-only, the Pro should come
+online before the BT-2 does — it is the longer pole.
 
 Port by cloning the repo. Keep `config/devices.yaml` machine-local and
 gitignored — it will hold BLE MAC addresses.
@@ -336,6 +476,9 @@ gitignored — it will hold BLE MAC addresses.
 | Register maps wrong for our firmware | Bad numbers | Cross-check every value against the DC Home app before trusting it |
 | Load derivation invalid on shore power | Misleading UI | Detect charging state; show "unavailable on shore power" rather than a wrong number |
 | RAM SKU too small | Model won't fit | Unknown until measured; 16GB is workable for INT4 3–7B |
+| **Sim and live diverge** — code works on `SimSource`, breaks on real data | Track P's value evaporates | Sim emits the *same units, ranges, and quantization* as the real devices, including noise and dropouts. Sim must be able to emit stale/missing samples too |
+| Demo shown as live by accident | Credibility | `SIM` badge on the dashboard, `"simulated": true` in every API payload, §8.1 shot discipline |
+| BLE drops out mid-take on camera | Ruined shot | `ReplaySource` on a real capture gives a deterministic, reproducible take |
 
 ---
 
