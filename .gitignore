@@ -1,0 +1,29 @@
+# Machine-local device config — holds BLE MAC addresses
+config/devices.yaml
+
+# Telemetry database
+*.db
+*.db-wal
+*.db-shm
+
+# Exported model artifacts (large)
+ov_*/
+*.bin
+*.xml.bin
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Capture media — kept out of git, stored alongside
+video/raw/
+*.mp4
+*.mkv
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
