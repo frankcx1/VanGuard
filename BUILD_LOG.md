@@ -191,6 +191,44 @@ already confirmed enumerating. P4 — chat + tools against the simulator.
 
 ---
 
+## 2026-07-25 — P3: Inference — the NPU story, measured
+
+What I built:
+- `inference/export.py` — reproducible INT4 export. Primary model chosen per
+  PLAN §6: **Qwen3-4B-Instruct-2507** (modern 4B, native tool calling,
+  Apache-2.0); Mistral-7B-v0.2 stays the documented fallback. Export is
+  NPU-friendly (symmetric, channel-wise, `--sym --group-size -1 --ratio
+  1.0`) [verified-external — OpenVINO NPU docs]; 2.1 GB artifact.
+- `inference/serve.py` — `InferenceEngine`: device-order fallback
+  (NPU→GPU→CPU from config), records serving device + TTFT + tokens/s per
+  request.
+- `inference/bench.py` — the three-way benchmark with battery-gauge power
+  sampling (honest n/a on AC).
+
+What broke:
+- First export attempt: `python -m optimum.exporters.openvino` **exited 0
+  having done nothing** (wrong entrypoint; runpy warning was the tell).
+  Fixed to `optimum-cli export openvino` and added a hard post-check so a
+  silent no-op can never read as success again. "Do not assume a command
+  worked because it printed nothing" — it can even print success.
+
+Results (full table + caveats in BENCHMARKS.md; run on battery):
+- **NPU: 27.2 tok/s, TTFT 727 ms, 18.4 W, 0.023 Wh/query** (compile 85 s)
+- **GPU: 36.7 tok/s, TTFT 186 ms, 23.4 W, 0.020 Wh/query**
+- **CPU: 14.5 tok/s, TTFT 1517 ms, 24.5 W, 0.060 Wh/query**
+
+The honest, non-obvious result PLAN §5 hoped for: GPU wins speed outright,
+NPU wins sustained draw, **energy per query is nearly a wash** — race-to-idle
+eats the NPU's wattage edge at single-query lengths. CPU loses everything
+but load time. Recommendation recorded in BENCHMARKS.md: GPU for interactive
+chat, NPU for the resident kiosk service.
+
+P3 was the last milestone gated on platform unknowns. Track P now has data,
+dashboard, and a measured local model. Next: P4 — chat + tool loop against
+the simulator, audit log, the cooktop answer.
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>
