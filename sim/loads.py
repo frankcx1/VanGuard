@@ -111,6 +111,7 @@ class LoadBank:
     fridge: Fridge | None
     pump: WaterPump | None
     events: list[LoadEvent] = field(default_factory=list)
+    last_ac_w: float = 0.0
 
     def step(self, dt_s: float, sim_h: float, clock_h: float) -> float:
         w = self.base_w + self.rng.uniform(-0.5, 0.5)
@@ -118,6 +119,10 @@ class LoadBank:
             w += self.fridge.step(dt_s)
         if self.pump is not None:
             w += self.pump.step(dt_s, clock_h)
+        self.last_ac_w = 0.0     # AC-side watts through the inverter this step
         for ev in self.events:
-            w += ev.dc_watts_at(sim_h)
+            dc = ev.dc_watts_at(sim_h)
+            w += dc
+            if ev.ac and dc > 0:
+                self.last_ac_w += ev.watts
         return max(0.0, w)

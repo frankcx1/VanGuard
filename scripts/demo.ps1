@@ -50,7 +50,12 @@ if ($SeedHours -le 0) {
 New-Item -ItemType Directory -Force $demoDir | Out-Null
 $db = Join-Path $demoDir "demo_$Scenario.db"
 foreach ($suffix in "", "-wal", "-shm") {
-    if (Test-Path "$db$suffix") { Remove-Item "$db$suffix" -Force }
+    # A just-stopped process can hold the db for a moment — retry briefly.
+    for ($try = 0; $try -lt 10; $try++) {
+        if (-not (Test-Path "$db$suffix")) { break }
+        try { Remove-Item "$db$suffix" -Force -ErrorAction Stop; break }
+        catch { Start-Sleep -Milliseconds 500 }
+    }
 }
 
 Write-Host "== seeding $SeedHours h of $Scenario =="

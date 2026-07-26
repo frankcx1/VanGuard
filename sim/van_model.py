@@ -29,7 +29,7 @@ import random
 import time
 
 from poller.source import Sample, TelemetrySource
-from sim.loads import LoadBank
+from sim.loads import INVERTER_EFFICIENCY, LoadBank
 
 # --- Battery -----------------------------------------------------------------
 
@@ -310,9 +310,12 @@ class SimSource(TelemetrySource):
         if "dcc50s" not in self._offline and rng.random() >= drop:   # dcc50s round
             pv_w = m.pv_w
             pv_v = 24.0 + pv_w / 400.0 * 12.0 if pv_w > 0 else 0.0  # 2S panel Vmp-ish
-            add("dcc50s", "pv_voltage_v", pv_v, 0.05, 0.1)
-            add("dcc50s", "pv_current_a", pv_w / pv_v if pv_v > 1 else 0.0, 0.03, 0.01)
-            add("dcc50s", "pv_power_w", pv_w, 0.8, 1.0)
+            # The controller reads a clean zero in the dark — noise only
+            # while the array is actually producing.
+            add("dcc50s", "pv_voltage_v", pv_v, 0.05 if pv_w > 0 else 0.0, 0.1)
+            add("dcc50s", "pv_current_a", pv_w / pv_v if pv_v > 1 else 0.0,
+                0.03 if pv_w > 0 else 0.0, 0.01)
+            add("dcc50s", "pv_power_w", pv_w, 0.8 if pv_w > 0 else 0.0, 1.0)
             add("dcc50s", "alt_power_w", m.alt_w, 1.0 if m.alt_w > 0 else 0.0, 1.0)
             add("dcc50s", "charge_current_a", max(0.0, i + m.load_w / max(v, 1.0)), 0.05, 0.01)
             add("dcc50s", "controller_temp_c", m.ambient_c() + pv_w / 300.0 * 14.0, 0.3, 1.0)
@@ -322,6 +325,20 @@ class SimSource(TelemetrySource):
             add("hvac", "mode", m.hvac.mode, 0.0, 1.0)
             add("hvac", "setpoint_c", m.hvac.setpoint_c, 0.0, 0.5)
             add("hvac", "hvac_power_w", m.hvac_w, 0.0, 1.0)
+        if "inverter" not in self._offline:  # inverter round (CAN-only device,
+            # unreadable in v1 — simulated in demo mode; see PLAN §12.5)
+            ac_w = m.loads.last_ac_w
+            if m.scn.shore_charger_a > 0:
+                state = 3.0            # BYPASS on shore power [verified van doc]
+            elif ac_w > 5.0:
+                state = 2.0            # inverting
+            else:
+                state = 1.0            # on, idle
+            dc_in = (ac_w / INVERTER_EFFICIENCY if ac_w > 0 else 0.0) + 18.0
+            add("inverter", "state", state, 0.0, 1.0)
+            add("inverter", "ac_out_w", ac_w, 0.5 if ac_w > 0 else 0.0, 1.0)
+            add("inverter", "dc_in_w", dc_in, 0.5, 1.0)
+            add("inverter", "load_pct", ac_w / 3000.0 * 100.0, 0.0, 1.0)
         if m.gps is not None and "gps" not in self._offline:     # GPS round
             add("gps", "lat", m.gps.lat, 0.00002, 0.00001)   # ~2m fix jitter
             add("gps", "lon", m.gps.lon, 0.00002, 0.00001)
@@ -336,7 +353,7 @@ class SimSource(TelemetrySource):
             # the last reading ages, and staleness handling does the rest —
             # real behaviour, not painted-on state.
             source = cmd.get("source")
-            if source not in ("shunt", "dcc50s", "hvac", "gps"):
+            if source not in ("shunt", "dcc50s", "hvac", "gps", "inverter"):
                 return False
             if cmd.get("offline"):
                 self._offline.add(source)

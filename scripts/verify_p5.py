@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import dataclasses
 import json
 import subprocess
 import sys
@@ -61,7 +62,7 @@ def sim_checks() -> None:
     for s in ems2:
         by2.setdefault(s.source, {})[s.metric] = s.value
     check("route ends parked (Tofino), alternator off",
-          by2["gps"]["speed_mph"] == 0.0 and by2["dcc50s"]["alt_power_w"] == 0.0
+          abs(by2["gps"]["speed_mph"]) < 0.5 and by2["dcc50s"]["alt_power_w"] == 0.0
           and abs(by2["gps"]["lat"] - 49.153) < 0.01,
           f"({by2['gps']['lat']:.4f}, {by2['gps']['lon']:.4f})")
 
@@ -97,6 +98,34 @@ def sim_checks() -> None:
     check("unknown sensor refused",
           src.apply_command({"target": "sensor", "source": "nope",
                              "offline": True}) is False)
+
+    print("== inverter (simulated; real unit is CAN-only) ==")
+    inv_idle = {s.metric: s.value for s in ems_back if s.source == "inverter"}
+    check("inverter idle when no AC load",
+          inv_idle.get("state") == 1.0 and inv_idle.get("ac_out_w") == 0.0)
+
+    sp = SimSource(get_scenario("shore_power"))
+    sp.advance(60)
+    inv_sp = {s.metric: s.value for s in sp.emit(1_770_000_060)
+              if s.source == "inverter"}
+    check("BYPASS on shore power (documented van behaviour)",
+          inv_sp.get("state") == 3.0)
+
+    from sim.loads import LoadEvent
+    cook_scn = dataclasses.replace(
+        get_scenario("dusk_low"),
+        events=(LoadEvent("cooktop", start_h=0.0, duration_min=30.0,
+                          watts=1500.0, ac=True),))
+    ck = SimSource(cook_scn)
+    ck.advance(300)
+    inv_ck = {s.metric: s.value for s in ck.emit(1_770_000_300)
+              if s.source == "inverter"}
+    check("cooktop → inverting, ~1500W AC / ~1720W DC",
+          inv_ck.get("state") == 2.0
+          and 1450 <= inv_ck.get("ac_out_w", 0) <= 1550
+          and 1650 <= inv_ck.get("dc_in_w", 0) <= 1800,
+          f"ac={inv_ck.get('ac_out_w')}W dc={inv_ck.get('dc_in_w')}W "
+          f"({inv_ck.get('load_pct')}% of 3000W)")
 
     print("== POI dataset ==")
     pois = nearby_pois(49.0770, -125.8120, radius_mi=15)

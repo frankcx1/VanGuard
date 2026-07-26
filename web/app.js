@@ -81,7 +81,33 @@ async function refreshLatest() {
   setLoadTile(dv);
   setChargeTile(dv?.charge_source);
   setClimateTile(rd);
+  setInverterTile(rd);
   fillTable(rd, data.server_ts);
+}
+
+const INV_STATES = {
+  0: ["off", "status plain"],
+  1: ["idle", "status plain"],
+  2: ["⚡ inverting", "status good"],
+  3: ["🔌 BYPASS · shore power", "status warn"],
+};
+
+function setInverterTile(rd) {
+  const inv = rd?.inverter;
+  if (!inv) {
+    $("inv-ac").textContent = "–";
+    $("inv-state").textContent = "no data";
+    $("inv-state").className = "status plain";
+    $("inv-detail").textContent = "CAN-only device · not readable until phase 2";
+    return;
+  }
+  const [label, cls] = INV_STATES[inv.state?.value] ?? ["–", "status plain"];
+  $("inv-state").textContent = label;
+  $("inv-state").className = cls;
+  $("inv-ac").textContent = (inv.ac_out_w?.value ?? 0).toFixed(0);
+  $("inv-detail").textContent =
+    `3000 W rated · ${(inv.load_pct?.value ?? 0).toFixed(0)}% load · ` +
+    `${(inv.dc_in_w?.value ?? 0).toFixed(0)} W DC in`;
 }
 
 const SRC_ICONS = { "solar": "☀️ Solar", "alternator": "🚐 Alternator", "shore (inferred)": "🔌 Shore (inferred)" };

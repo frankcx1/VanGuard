@@ -108,15 +108,23 @@
     <div id="chat-log" aria-live="polite"></div>
   </section>
 
-  <section class="tile scrolly">
-    <div class="tile-head"><h2>Tool audit</h2><span class="status plain">read-only</span></div>
-    <div class="table-wrap">
-      <table id="audit-table" aria-label="Tool invocation audit log">
-        <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </section>
+  <div class="stack">
+    <section class="tile inverter-tile">
+      <div class="tile-head"><h2>Inverter</h2><span id="inv-state" class="status plain"></span></div>
+      <div class="big"><span id="inv-ac">–</span><span class="unit">W AC out</span></div>
+      <div class="row sub2"><span id="inv-detail">3000 W rated</span></div>
+    </section>
+
+    <section class="tile scrolly">
+      <div class="tile-head"><h2>Tool audit</h2><span class="status plain">read-only</span></div>
+      <div class="table-wrap">
+        <table id="audit-table" aria-label="Tool invocation audit log">
+          <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 </main>
 
 <footer>

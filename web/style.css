@@ -87,6 +87,11 @@ main.grid {
 .tile.scrolly { overflow: hidden; }
 .table-wrap { flex: 1; min-height: 0; overflow-y: auto; }
 
+.stack { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; }
+.stack .tile { flex: 0 0 auto; }
+.stack .tile.scrolly { flex: 1; }
+.inverter-tile { min-height: 0; }
+
 /* Small screens: give up the single-screen lock, scroll normally. */
 @media (max-width: 1100px) {
   body { height: auto; overflow: auto; }

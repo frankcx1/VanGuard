@@ -109,7 +109,13 @@ class ToolRunner:
                            "telemetry, load underivable")
                 if derived.shore_power_suspected(rd) else "no data",
             }
-        return {"load_w": _r(load, 0), "note": "aggregate DC load; no per-circuit breakdown"}
+        inv = {m: v for m, (ts, v) in rd.get("inverter", {}).items()}
+        state = {0.0: "off", 1.0: "idle", 2.0: "inverting",
+                 3.0: "bypass (shore power)"}.get(inv.get("state"))
+        return {"load_w": _r(load, 0),
+                "inverter_state": state,
+                "inverter_ac_out_w": _r(inv.get("ac_out_w"), 0),
+                "note": "aggregate DC load; no per-circuit breakdown"}
 
     async def tool_get_history(self, metric: str, window_h: float = 24) -> dict:
         if metric not in HISTORY_METRICS:
