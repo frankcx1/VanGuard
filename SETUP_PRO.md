@@ -7,16 +7,23 @@ Pro for Business 13-inch (12th Edition, Intel). Follow in order.
 
 ## 1. Put the files in place
 
-Both folders came over via OneDrive at `C:\Users\<you>\OneDrive\`. **Copy them
-out to local paths — do not work inside the OneDrive folder.** OneDrive syncing
-a live `.git` directory can corrupt it, and Files On-Demand can turn files into
-placeholders mid-operation.
+**The repo comes from GitHub, the docs come from OneDrive.**
 
 ```powershell
 New-Item -ItemType Directory -Force C:\vibe | Out-Null
-Copy-Item "$env:OneDrive\VanGuard" C:\vibe\VanGuard -Recurse
+cd C:\vibe
+gh auth login                       # once, on this machine
+gh repo clone frankcx1/VanGuard
 Copy-Item "$env:OneDrive\Sprinter" C:\vibe\Sprinter -Recurse
 ```
+
+Clone the repo rather than copying it from OneDrive — you get the full history
+and a working remote in one step.
+
+For the docs, **copy them out to a local path; do not work inside the OneDrive
+folder.** OneDrive syncing a live `.git` directory can corrupt it, and Files
+On-Demand can turn files into placeholders mid-operation. OneDrive is the
+transfer medium here, not the working directory.
 
 Paths matter: `CLAUDE.md` and `PLAN.md` refer to the docs as `../Sprinter/`, so
 keeping both under `C:\vibe\` makes those references resolve.
@@ -123,24 +130,33 @@ model and §8 Track P for the sequence.
 
 ---
 
-## 6. GitHub — deferred, not forgotten
+## 6. GitHub
 
-The repo isn't pushed anywhere yet; 2FA on the account got in the way and it
-wasn't worth blocking the migration over. Git works entirely offline, so build
-freely and push the whole history whenever you sort it out.
+The repo is public at **<https://github.com/frankcx1/VanGuard>**, which satisfies
+the brief's requirement for a public commit trail as provenance.
 
-When you do:
+Commits are authored under the account's `users.noreply.github.com` address so
+they attribute to the profile without exposing a personal email. That's set
+repo-locally, so anything you commit here inherits it automatically — but it
+does **not** carry to other repos. Check with:
 
-1. Check which 2FA methods the account actually has at
-   <https://github.com/settings/security>
-2. Decide which account owns this — the one your browser is signed into, or the
-   one matching how the commits are currently authored (`the personal account`).
-   GitHub attributes commits by matching the author email to a **verified email
-   on the account**, so a mismatch means the history won't link to your profile.
-3. Before making it public, rewrite the two existing commits to that account's
-   `<id>+<username>@users.noreply.github.com` address — much easier at two
-   commits than at fifty.
-4. `gh auth login` → `gh repo create VanGuard --public --source=. --push`
+```powershell
+git -C C:\vibe\VanGuard config user.email
+```
 
-The brief wants a public commit trail as provenance, so the commit *dates*
-matter. They're already recorded locally and will survive the eventual push.
+If you clone fresh on the Pro (§1), the config travels with the clone only if
+you set it again — `gh repo clone` does not copy local config. Re-run:
+
+```powershell
+git config user.email "199670682+frankcx1@users.noreply.github.com"
+git config user.name "frankcx1"
+```
+
+To make this the default everywhere, tick **"Keep my email address private"** in
+<https://github.com/settings/emails>.
+
+### 2FA note
+
+Access to this account was recovered once via a recovery code after an
+authenticator was lost. Keep a passkey registered as the primary method and the
+current recovery codes somewhere durable — a password manager, not `Downloads`.
