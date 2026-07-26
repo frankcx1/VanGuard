@@ -11,6 +11,8 @@ db_path: vanguard.db
 sim:
   scenario: dusk_low   # sunny_midday | dusk_low | overnight_drain | shore_power | cloudy_marginal
   speed: 1.0           # >1 runs the van faster than real time
+  warmup_h: 0.0        # advance the model this many sim-hours before the first
+                       # poll — join a day in progress instead of t=0
 
 replay:
   capture: sim/captures/example.jsonl

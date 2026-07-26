@@ -4,6 +4,7 @@ devices.yaml is gitignored on purpose — it will hold BLE MAC addresses.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import yaml
@@ -14,6 +15,8 @@ EXAMPLE_PATH = REPO_ROOT / "config" / "devices.example.yaml"
 
 
 def load_config(path: str | Path | None = None) -> dict:
+    """Resolution order: explicit arg → $VANGUARD_CONFIG → devices.yaml → example."""
+    path = path or os.environ.get("VANGUARD_CONFIG")
     p = Path(path) if path else (CONFIG_PATH if CONFIG_PATH.exists() else EXAMPLE_PATH)
     with p.open(encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -32,6 +35,7 @@ def build_source(cfg: dict):
         return SimSource(
             get_scenario(sim_cfg.get("scenario", "sunny_midday")),
             speed=float(sim_cfg.get("speed", 1.0)),
+            warmup_h=float(sim_cfg.get("warmup_h", 0.0)),
         )
     if kind == "replay":
         from sim.replay import ReplaySource

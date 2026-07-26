@@ -232,13 +232,18 @@ class SimSource(TelemetrySource):
     name = "sim"
     MODEL_DT_S = 5.0     # internal integration step; polls advance N of these
 
-    def __init__(self, scenario, speed: float = 1.0, ts_fn=time.time):
+    def __init__(self, scenario, speed: float = 1.0, warmup_h: float = 0.0,
+                 ts_fn=time.time):
         from sim.scenarios import build_model   # local import avoids a cycle
         self.scn = scenario
         self.speed = speed
         self._ts_fn = ts_fn
         self.model, self._rng = build_model(scenario)
         self._last_wall = None
+        if warmup_h > 0:
+            # Join a day in progress — the take starts mid-story, not at the
+            # scenario's initial conditions.
+            self.advance(warmup_h * 3600.0)
 
     def advance(self, sim_seconds: float) -> None:
         """Step the model forward by sim_seconds in MODEL_DT_S increments."""

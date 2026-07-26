@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VanGuard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>VanGuard</h1>
+    <span class="sub">Sprinter power · offline</span>
+  </div>
+  <div class="chips">
+    <span id="sim-badge" class="badge sim hidden">⚠ SIM</span>
+    <span id="stale-chip" class="badge stale hidden">⚠ STALE</span>
+    <span id="clock" class="badge quiet"></span>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="tile hero">
+    <div class="tile-head"><h2>Battery</h2><span id="soc-status" class="status"></span></div>
+    <div class="big"><span id="soc">–</span><span class="unit">%</span></div>
+    <div class="row sub2">
+      <span id="tte-ttf">–</span>
+    </div>
+    <div class="spark" data-spark="soc"></div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>Voltage</h2></div>
+    <div class="big"><span id="volts">–</span><span class="unit">V</span></div>
+    <div class="row sub2"><span id="amps">–</span><span id="batt-temp">–</span></div>
+    <div class="spark" data-spark="volts"></div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>Net power</h2><span id="flow-dir" class="status"></span></div>
+    <div class="big"><span id="net-w">–</span><span class="unit">W</span></div>
+    <div class="row sub2"><span>signed at the shunt · + is charging</span></div>
+    <div class="spark" data-spark="net"></div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>Solar</h2></div>
+    <div class="big"><span id="pv-w">–</span><span class="unit">W</span></div>
+    <div class="row sub2"><span id="pv-yield">–</span></div>
+    <div class="spark" data-spark="pv"></div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>DC load</h2></div>
+    <div class="big" id="load-big"><span id="load-w">–</span><span class="unit">W</span></div>
+    <div class="row sub2"><span id="load-note">derived: sources in − net battery power</span></div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>All readings</h2></div>
+    <table id="readings-table" aria-label="Latest raw readings">
+      <thead><tr><th>device</th><th>metric</th><th class="num">value</th><th>age</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<footer>
+  <span id="src-line">–</span>
+</footer>
+
+<div id="tooltip" class="tooltip hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

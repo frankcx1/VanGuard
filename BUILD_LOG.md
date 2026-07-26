@@ -145,6 +145,52 @@ Next: P2 — dashboard (dark, big tiles, 24h sparklines, SIM badge).
 
 ---
 
+## 2026-07-25 — P2: Dashboard + API
+
+What I built:
+- `api/main.py` — the `vanguard-api` process (FastAPI). Routes:
+  `/api/status` (freshness/staleness), `/api/telemetry/latest` (readings +
+  derived bundle), `/api/telemetry/history` (windowed series, bucket-mean
+  decimated to ≤300 points, auto-switching raw → 1m past 48h). **Every
+  payload carries `"simulated"`** from the configured source — the guardrail
+  is stamped server-side, and the SIM badge is driven only by that stamp.
+- `web/` — the final dashboard, not a mockup: dark, big tiles (SOC hero with
+  status chip, voltage, signed net power, solar + daily yield, DC load),
+  24h SVG sparklines with hover crosshair + tooltip, an all-readings table
+  (the accessibility/table view), staleness chip, and the honest DC-load
+  state: "unavailable on shore power" instead of a wrong number. Zero
+  dependencies, zero CDN — fully offline, per ground rules.
+- Colors are the validated dark-mode steps of the bundled dataviz reference
+  palette (series hues fixed per entity; status colors reserved). Node isn't
+  installed so the palette validator script couldn't run locally; the exact
+  set + order used is the one documented as passing all gates (worst
+  adjacent CVD ΔE 8.4 dark). [verified-external against the skill's docs]
+- `sim.warmup_h` config — the poller's sim can join a day in progress, so a
+  fresh boot doesn't cold-start sparklines at scenario t=0. Also the knob
+  that makes filmed takes start mid-story.
+- `VANGUARD_CONFIG` env override so both processes point at one config file.
+
+What broke:
+- Decimation off-by-one: float stride accumulation emitted 301 points for a
+  300 cap. Rewrote with integer bucket boundaries (`k*n//max`).
+
+Verification:
+- `scripts/verify_p2.py` — **13/13**: freshness, integrity stamp on every
+  endpoint, decimation cap, raw→1m switchover, param validation, static
+  serving, and the shore-power honesty path end-to-end over the API
+  (`load_w: null` while the shunt shows +518W charging).
+- `scripts/verify_p1.py` still **20/20** after the warmup change.
+- Live two-process smoke test: poller + uvicorn against one WAL db,
+  seeded 24h + `warmup_h: 24` continuation, headless-Edge screenshot
+  eyeballed: SIM badge, staleness fresh, sparklines showing fridge steps,
+  absorption spikes, solar bell. The two processes coexist on WAL with no
+  lock errors at 5s cadence.
+
+Next: P3 — inference (export INT4, NPU vs GPU vs CPU benchmark) — the NPU is
+already confirmed enumerating. P4 — chat + tools against the simulator.
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>
