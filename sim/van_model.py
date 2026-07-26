@@ -267,6 +267,7 @@ class SimSource(TelemetrySource):
         self._ts_fn = ts_fn
         self.model, self._rng = build_model(scenario)
         self._last_wall = None
+        self._offline: set[str] = set()   # sensors knocked out via command
         if warmup_h > 0:
             # Join a day in progress — the take starts mid-story, not at the
             # scenario's initial conditions.
@@ -298,7 +299,7 @@ class SimSource(TelemetrySource):
         drop = self.scn.dropout_rate
         v = m.batt_v
         i = m.battery.i_net_a
-        if rng.random() >= drop:   # shunt round
+        if "shunt" not in self._offline and rng.random() >= drop:   # shunt round
             add("shunt", "voltage_v", v, 0.004, 0.01)
             add("shunt", "current_a", i, 0.05, 0.01)
             add("shunt", "power_w", v * i, 0.8, 1.0)
@@ -306,7 +307,7 @@ class SimSource(TelemetrySource):
             add("shunt", "temp_c", m.ambient_c() + 2.0 + abs(i) / 200.0 * 6.0, 0.2, 1.0)
             add("shunt", "charge_ah_total", m.battery.charge_ah_total, 0.0, 0.1)
             add("shunt", "discharge_ah_total", m.battery.discharge_ah_total, 0.0, 0.1)
-        if rng.random() >= drop:   # dcc50s round
+        if "dcc50s" not in self._offline and rng.random() >= drop:   # dcc50s round
             pv_w = m.pv_w
             pv_v = 24.0 + pv_w / 400.0 * 12.0 if pv_w > 0 else 0.0  # 2S panel Vmp-ish
             add("dcc50s", "pv_voltage_v", pv_v, 0.05, 0.1)
@@ -316,12 +317,12 @@ class SimSource(TelemetrySource):
             add("dcc50s", "charge_current_a", max(0.0, i + m.load_w / max(v, 1.0)), 0.05, 0.01)
             add("dcc50s", "controller_temp_c", m.ambient_c() + pv_w / 300.0 * 14.0, 0.3, 1.0)
             add("dcc50s", "daily_yield_wh", m.daily_yield_wh, 0.0, 1.0)
-        if m.hvac is not None:     # cabin sensor round (P5 demo; BLE thermometer later)
+        if m.hvac is not None and "hvac" not in self._offline:   # cabin sensor round
             add("hvac", "cabin_temp_c", m.hvac.cabin_c, 0.05, 0.1)
             add("hvac", "mode", m.hvac.mode, 0.0, 1.0)
             add("hvac", "setpoint_c", m.hvac.setpoint_c, 0.0, 0.5)
             add("hvac", "hvac_power_w", m.hvac_w, 0.0, 1.0)
-        if m.gps is not None:      # GPS round (USB NMEA unit later)
+        if m.gps is not None and "gps" not in self._offline:     # GPS round
             add("gps", "lat", m.gps.lat, 0.00002, 0.00001)   # ~2m fix jitter
             add("gps", "lon", m.gps.lon, 0.00002, 0.00001)
             add("gps", "speed_mph", m.gps.speed_mph, 0.2, 0.1)
@@ -330,4 +331,16 @@ class SimSource(TelemetrySource):
         return out
 
     def apply_command(self, cmd: dict) -> bool:
+        if cmd.get("target") == "sensor":
+            # Take a simulated sensor offline (or back): its samples stop,
+            # the last reading ages, and staleness handling does the rest —
+            # real behaviour, not painted-on state.
+            source = cmd.get("source")
+            if source not in ("shunt", "dcc50s", "hvac", "gps"):
+                return False
+            if cmd.get("offline"):
+                self._offline.add(source)
+            else:
+                self._offline.discard(source)
+            return True
         return self.model.apply_command(cmd)

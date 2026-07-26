@@ -42,6 +42,11 @@ class HvacCommand(BaseModel):
     setpoint_c: float | None = Field(default=None, ge=10, le=32)
 
 
+class SensorCommand(BaseModel):
+    source: Literal["shunt", "dcc50s", "hvac", "gps"]
+    offline: bool
+
+
 DEFAULT_ALERT_RULES = {
     "soc_warn_pct": 30.0,
     "soc_crit_pct": 15.0,
@@ -195,6 +200,18 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             result_hash="-", device="HUMAN", duration_ms=0)
         return stamp({"queued": cmd_id,
                       "note": "applied by the poller within one poll interval"})
+
+    @app.post("/api/sensor")
+    async def sensor(body: SensorCommand):
+        # Demo control: knock a simulated sensor offline / bring it back.
+        if cfg["source"] != "sim":
+            raise HTTPException(403, "sensor toggling is a sim-only demo control")
+        payload = {"target": "sensor", **body.model_dump()}
+        cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
+        await app.state.store.audit(
+            tool="ui_sensor_toggle", args_json=json.dumps(payload),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"queued": cmd_id})
 
     @app.get("/api/trip")
     async def trip(radius_mi: float = Query(default=15.0, ge=1, le=100)):

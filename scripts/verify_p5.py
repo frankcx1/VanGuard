@@ -86,6 +86,18 @@ def sim_checks() -> None:
     src.advance(60)
     check("off command stops the draw", src.model.hvac_w == 0.0)
 
+    ok = src.apply_command({"target": "sensor", "source": "gps", "offline": True})
+    src.advance(30)
+    ems_off = src.emit(1_770_102_100)
+    gps_gone = not any(s.source == "gps" for s in ems_off)
+    src.apply_command({"target": "sensor", "source": "gps", "offline": False})
+    ems_back = src.emit(1_770_102_130)
+    check("sensor offline toggle: gps stops emitting, then returns",
+          ok and gps_gone and any(s.source == "gps" for s in ems_back))
+    check("unknown sensor refused",
+          src.apply_command({"target": "sensor", "source": "nope",
+                             "offline": True}) is False)
+
     print("== POI dataset ==")
     pois = nearby_pois(49.0770, -125.8120, radius_mi=15)
     check("Tofino POIs within 15mi of Green Point",

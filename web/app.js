@@ -181,18 +181,40 @@ function setLoadTile(dv) {
   }
 }
 
+/* Value column is color-coded by freshness: green <15s, yellow <45s,
+   red beyond (the age column carries the same fact in text, so color is
+   never the only channel). Click a device name to toggle that simulated
+   sensor offline/online. */
+function ageClass(age) {
+  if (age < 15) return "val-ok";
+  if (age < 45) return "val-warn";
+  return "val-bad";
+}
+
 function fillTable(rd, serverTs) {
   const tbody = $("readings-table").querySelector("tbody");
   const rows = [];
   for (const source of Object.keys(rd ?? {}).sort()) {
     for (const metric of Object.keys(rd[source]).sort()) {
       const { ts, value } = rd[source][metric];
-      rows.push(`<tr><td>${source}</td><td>${metric}</td>` +
-        `<td class="num">${Number(value.toFixed(3))}</td>` +
-        `<td>${fmtAge(serverTs - ts)}</td></tr>`);
+      const age = serverTs - ts;
+      rows.push(
+        `<tr><td class="dev" data-source="${source}" data-age="${age}" ` +
+        `title="click to toggle this sensor offline (sim)">${source}</td>` +
+        `<td>${metric}</td>` +
+        `<td class="num ${ageClass(age)}">${Number(value.toFixed(3))}</td>` +
+        `<td>${fmtAge(age)}</td></tr>`);
     }
   }
   tbody.innerHTML = rows.join("");
+  tbody.querySelectorAll("td.dev").forEach(td =>
+    td.addEventListener("click", () => {
+      const offline = Number(td.dataset.age) > 45;   // stale ⇒ bring it back
+      fetch("/api/sensor", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: td.dataset.source, offline: !offline }),
+      }).then(refreshAudit);
+    }));
 }
 
 /* ---- status / staleness ---------------------------------------------------- */
