@@ -66,14 +66,14 @@
 
   <section class="tile">
     <div class="tile-head"><h2>Climate</h2><span id="hvac-state" class="status plain"></span></div>
-    <div class="big"><span id="cabin-temp">–</span><span class="unit">°C inside</span></div>
+    <div class="big"><span id="cabin-temp">–</span><span class="unit">°F inside</span></div>
     <div class="hvac-controls">
       <div class="seg" role="group" aria-label="HVAC mode">
         <button data-mode="off">Off</button>
         <button data-mode="heat">Heat</button>
         <button data-mode="cool">Cool</button>
       </div>
-      <label>set <input id="setpoint" type="number" min="10" max="32" step="0.5" value="21"> °C</label>
+      <label>set <input id="setpoint" type="number" min="50" max="90" step="1" value="70"> °F</label>
     </div>
     <div class="row sub2"><span id="hvac-note">sim control · live control is phase 2</span></div>
   </section>
@@ -85,31 +85,35 @@
     <ul id="poi-list"></ul>
   </section>
 
-  <section class="tile">
+  <section class="tile scrolly">
     <div class="tile-head"><h2>All readings</h2></div>
-    <table id="readings-table" aria-label="Latest raw readings">
-      <thead><tr><th>device</th><th>metric</th><th class="num">value</th><th>age</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="table-wrap">
+      <table id="readings-table" aria-label="Latest raw readings">
+        <thead><tr><th>device</th><th>metric</th><th class="num">value</th><th>age</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 
   <section class="tile wide chat-tile">
     <div class="tile-head"><h2>Ask VanGuard</h2><span id="chat-meta" class="status plain"></span></div>
-    <div id="chat-log" aria-live="polite"></div>
     <form id="chat-form">
       <input id="chat-input" type="text" autocomplete="off"
              placeholder="Can I run the cooktop for 25 minutes?">
       <button id="chat-mic" type="button" title="Hold to talk (offline Whisper)">🎤</button>
       <button id="chat-send" type="submit">Ask</button>
     </form>
+    <div id="chat-log" aria-live="polite"></div>
   </section>
 
-  <section class="tile wide">
-    <div class="tile-head"><h2>Tool audit</h2><span class="status plain">sees everything · touches nothing</span></div>
-    <table id="audit-table" aria-label="Tool invocation audit log">
-      <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th><th>result hash</th></tr></thead>
-      <tbody></tbody>
-    </table>
+  <section class="tile scrolly">
+    <div class="tile-head"><h2>Tool audit</h2><span class="status plain">read-only</span></div>
+    <div class="table-wrap">
+      <table id="audit-table" aria-label="Tool invocation audit log">
+        <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
 </main>
 

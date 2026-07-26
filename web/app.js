@@ -16,6 +16,9 @@ const SPARKS = {
 const $ = id => document.getElementById(id);
 const tooltip = $("tooltip");
 
+const cToF = c => c * 9 / 5 + 32;
+const fToC = f => (f - 32) * 5 / 9;
+
 function fmtAge(s) {
   if (s == null) return "–";
   if (s < 90) return `${Math.round(s)}s`;
@@ -60,7 +63,7 @@ async function refreshLatest() {
   const i = get(rd, "shunt", "current_a");
   $("amps").textContent = i == null ? "–" : `${i > 0 ? "+" : ""}${i.toFixed(1)} A`;
   const bt = get(rd, "shunt", "temp_c");
-  $("batt-temp").textContent = bt == null ? "–" : `${bt.toFixed(0)} °C`;
+  $("batt-temp").textContent = bt == null ? "–" : `${cToF(bt).toFixed(0)} °F`;
 
   const net = get(rd, "shunt", "power_w");
   $("net-w").textContent = net == null ? "–" : Math.abs(net).toFixed(0);
@@ -97,11 +100,12 @@ function setChargeTile(cs) {
 function setClimateTile(rd) {
   const hv = rd?.hvac;
   if (!hv) return;
-  $("cabin-temp").textContent = hv.cabin_temp_c ? hv.cabin_temp_c.value.toFixed(1) : "–";
+  $("cabin-temp").textContent =
+    hv.cabin_temp_c ? cToF(hv.cabin_temp_c.value).toFixed(1) : "–";
   const mode = { 0: "off", 1: "heat", 2: "cool" }[hv.mode?.value] ?? "off";
   const running = (hv.hvac_power_w?.value ?? 0) > 1;
   $("hvac-state").textContent = mode === "off" ? "" :
-    `${mode} → ${hv.setpoint_c?.value}°C${running ? " · running" : " · idle"}`;
+    `${mode} → ${cToF(hv.setpoint_c?.value).toFixed(0)}°F${running ? " · running" : " · idle"}`;
   document.querySelectorAll(".seg button").forEach(b =>
     b.classList.toggle("active", b.dataset.mode === mode));
 }
@@ -109,7 +113,7 @@ function setClimateTile(rd) {
 document.querySelectorAll(".seg button").forEach(btn =>
   btn.addEventListener("click", () => sendHvac({ mode: btn.dataset.mode })));
 $("setpoint").addEventListener("change", () =>
-  sendHvac({ setpoint_c: parseFloat($("setpoint").value) }));
+  sendHvac({ setpoint_c: Math.round(fToC(parseFloat($("setpoint").value)) * 2) / 2 }));
 
 async function sendHvac(cmd) {
   try {
@@ -434,12 +438,11 @@ async function refreshAudit() {
   const { entries } = await r.json();
   const tbody = $("audit-table").querySelector("tbody");
   tbody.innerHTML = (entries ?? []).map(e =>
-    `<tr><td>${new Date(e.ts * 1000).toLocaleTimeString()}</td>` +
+    `<tr><td>${new Date(e.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>` +
     `<td>${escapeHtml(e.tool)}</td>` +
     `<td><code>${escapeHtml(e.args)}</code></td>` +
     `<td>${escapeHtml(e.device ?? "–")}</td>` +
-    `<td class="num">${e.duration_ms}</td>` +
-    `<td><code>${escapeHtml(e.result_hash)}</code></td></tr>`).join("");
+    `<td class="num">${e.duration_ms}</td></tr>`).join("");
 }
 
 /* ---- boot ------------------------------------------------------------------ */

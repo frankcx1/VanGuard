@@ -57,7 +57,10 @@ SYSTEM_PROMPT = (
     "this renders on a small dashboard.\n"
     "- If data is unavailable, say so plainly - never invent a value.\n"
     "- Never mention tool names or field names in the answer - speak in "
-    "plain English quantities.\n"
+    "plain English quantities. Never claim data came from a tool you did "
+    "not actually call this turn.\n"
+    "- Temperatures: report in Fahrenheit. Tools provide *_f fields "
+    "already converted - use them as-is, never convert units yourself.\n"
     "- You are read-only: you can see everything and touch nothing."
 )
 
@@ -112,17 +115,72 @@ def parse_tool_calls(text: str) -> list[dict]:
     return calls
 
 
+# Anti-fabrication, structural: auto-fetch through the audited read-only
+# tools and inject into the system prompt — but ONLY the domains this model
+# fabricates instead of calling tools (observed: climate — it invented
+# "68°F" twice despite explicit rules; power questions reliably tool-call).
+# Power/battery data deliberately stays OUT of the snapshot: when it was
+# included, the model stopped calling estimate_runtime and freehanded the
+# cooktop math wrong. Starve it of power numbers and it must use the tools.
+SNAPSHOT_TOOLS = ("get_climate", "get_trip_status")
+
+
+async def _snapshot(runner: ToolRunner, device: str, trace: list) -> str:
+    parts = {}
+    for name in SNAPSHOT_TOOLS:
+        result = await runner.call(name, {}, device=device)
+        trace.append({"tool": name, "args": {}, "result": result, "auto": True})
+        parts[name.removeprefix("get_")] = result
+    return json.dumps(parts, separators=(",", ":"))
+
+
 @router.post("/v1/chat/completions")
 async def chat_completions(body: ChatRequest, request: Request):
     engine, tokenizer = await get_engine(request)
     runner = ToolRunner(request.app.state.store)
     simulated = request.app.state.simulated
 
-    history: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    t_start = time.perf_counter()
+    final_text, trace, gen, rounds = await _run_loop(
+        body, request, engine, tokenizer, runner, SYSTEM_PROMPT)
+    total_ms = int((time.perf_counter() - t_start) * 1000)
+
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": f"vanguard/{Path(engine.model_dir).name}",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": final_text},
+            "finish_reason": "stop",
+        }],
+        "usage": {"total_time_ms": total_ms},
+        "vanguard": {
+            "simulated": simulated,
+            "device": engine.device,
+            "tokens_per_s": round(gen.tokens_per_s, 1),
+            "ttft_ms": round(gen.ttft_ms),
+            "tool_calls": trace,
+            "rounds": rounds,
+        },
+    }
+
+
+async def _run_loop(body, request, engine, tokenizer, runner, system_prompt):
+    trace: list[dict] = []
+    snapshot = await _snapshot(runner, engine.device, trace)
+    system = (
+        system_prompt
+        + "\n\nLive climate/trip snapshot, auto-fetched through the audited "
+          "read-only tools as this message arrived. Cabin temperature, HVAC "
+          "and position values MUST come from here:\n" + snapshot
+        + "\nEverything else (battery, solar, loads, history, runtime math, "
+          "nearby places) is NOT in this snapshot - call the tools."
+    )
+    history: list[dict] = [{"role": "system", "content": system}]
     history += [m.model_dump() for m in body.messages if m.role != "system"]
 
-    trace: list[dict] = []
-    t_start = time.perf_counter()
     final_text = ""
     for round_no in range(MAX_TOOL_ROUNDS + 1):
         allow_tools = round_no < MAX_TOOL_ROUNDS
@@ -155,25 +213,4 @@ async def chat_completions(body: ChatRequest, request: Request):
                 "role": "tool",
                 "content": json.dumps(result, separators=(",", ":")),
             })
-    total_ms = int((time.perf_counter() - t_start) * 1000)
-
-    return {
-        "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": f"vanguard/{Path(engine.model_dir).name}",
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": final_text},
-            "finish_reason": "stop",
-        }],
-        "usage": {"total_time_ms": total_ms},
-        "vanguard": {
-            "simulated": simulated,
-            "device": engine.device,
-            "tokens_per_s": round(gen.tokens_per_s, 1),
-            "ttft_ms": round(gen.ttft_ms),
-            "tool_calls": trace,
-            "rounds": round_no + 1,
-        },
-    }
+    return final_text, trace, gen, round_no + 1

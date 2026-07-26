@@ -36,6 +36,11 @@ def _r(x: float | None, nd: int = 1) -> float | None:
     return None if x is None else round(x, nd)
 
 
+def _f(c: float | None) -> float | None:
+    """°C → °F, done here so the model never converts units itself."""
+    return None if c is None else round(c * 9 / 5 + 32, 1)
+
+
 class ToolRunner:
     """Executes named tools against the store; audits every call."""
 
@@ -77,7 +82,7 @@ class ToolRunner:
             "voltage_v": _r(sh.get("voltage_v"), 2),
             "current_a": _r(sh.get("current_a"), 1),
             "power_w": _r(sh.get("power_w"), 0),
-            "temp_c": _r(sh.get("temp_c"), 0),
+            "temp_f": _f(sh.get("temp_c")),
             "capacity_ah": CAPACITY_AH,
             "time_to_empty_h": _r(derived.time_to_empty_h(rd)),
             "time_to_full_h": _r(derived.time_to_full_h(rd)),
@@ -133,9 +138,9 @@ class ToolRunner:
             return {"error": "no climate data"}
         mode = {0.0: "off", 1.0: "heat", 2.0: "cool"}.get(hv.get("mode"), "off")
         return {
-            "cabin_temp_c": _r(hv.get("cabin_temp_c")),
+            "cabin_temp_f": _f(hv.get("cabin_temp_c")),
             "mode": mode,
-            "setpoint_c": _r(hv.get("setpoint_c")),
+            "setpoint_f": _f(hv.get("setpoint_c")),
             "hvac_power_w": _r(hv.get("hvac_power_w"), 0),
             "note": "read-only; controls are human-only via the dashboard",
         }
@@ -227,7 +232,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {
         "name": "get_climate",
-        "description": "Cabin temp C, HVAC mode/setpoint, HVAC watts. Read-only.",
+        "description": "Cabin temp F, HVAC mode/setpoint F, HVAC watts. Read-only.",
         "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {
         "name": "get_trip_status",

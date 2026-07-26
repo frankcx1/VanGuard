@@ -323,6 +323,34 @@ tile, climate controls, Tofino POIs, mic button, HUMAN rows in the audit.
 
 ---
 
+## 2026-07-26 (later) — Driveway scenario, °F, one-screen layout, and a
+## fabrication catch
+
+- **`driveway` scenario** — parked at approximate central-Kirkland coords
+  (deliberately not a real address; public repo) with an Eastside
+  recreation POI set. Regional POI datasets (`pois_*.json`) are merged and
+  **auto-selected by position** — no config, distance does the work.
+- **Fahrenheit** across the dashboard (battery temp, cabin, setpoint input
+  50–90°F converting to °C at the API). Tools now return pre-converted
+  `*_f` fields so the model never does unit math.
+- **One-screen layout** at Frank's request/screenshot: fixed 4×3 grid,
+  `body` locked to 100vh, readings/audit/chat scroll inside their tiles,
+  Ask input moved to the top of the chat tile. Falls back to normal
+  scrolling under 1100px.
+- **Fabrication caught and fixed structurally.** Asked "how warm is it
+  inside?", the model answered "68°F" with **zero tool calls** and a fake
+  "values from get_climate" citation (real: 72.9°F). A strict-retry prompt
+  didn't cure it. Structural fix: every chat request auto-fetches a
+  **climate/trip snapshot through the audited tools** and injects it into
+  context — those values can't be invented anymore. Power/battery data is
+  deliberately NOT in the snapshot: when it was, the model stopped calling
+  estimate_runtime and freehanded the cooktop math wrong (said "no" at 91%
+  SOC; truth is yes with a 96-minute margin). Starved of power numbers, it
+  must use the tools — verified both paths.
+- Full regression after all of it: P4 23/23, P5 20/20 fast checks.
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>
