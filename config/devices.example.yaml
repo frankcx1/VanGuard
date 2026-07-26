@@ -1,0 +1,22 @@
+# VanGuard device config — copy to config/devices.yaml (gitignored, machine-local).
+# devices.yaml is machine-local because it will hold BLE MAC addresses (PLAN.md §8.1).
+
+source: sim            # live | sim | replay
+
+poll_interval_s: 5     # sim/replay cadence; live uses 20-30s (PLAN.md M2 — BLE
+                       # round-robins sequentially, a van needs nothing faster)
+
+db_path: vanguard.db
+
+sim:
+  scenario: dusk_low   # sunny_midday | dusk_low | overnight_drain | shore_power | cloudy_marginal
+  speed: 1.0           # >1 runs the van faster than real time
+
+replay:
+  capture: sim/captures/example.jsonl
+  speed: 1.0
+  loop: true
+
+live:                  # M2 — requires the BT-2 dongle and M1 passing
+  shunt_mac: ""
+  bt2_mac: ""

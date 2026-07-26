@@ -100,6 +100,51 @@ Next: P1 — simulator + storage layer (PLAN.md §7, §8 Track P).
 
 ---
 
+## 2026-07-25 — P1: Simulator + storage layer
+
+What I built:
+- `poller/source.py` — the `TelemetrySource` interface (the POC hinge), with
+  the `simulated` property that drives the SIM badge / `"simulated": true`
+  integrity guardrail.
+- `sim/van_model.py` — `SimSource` + the physical model: coulomb-counting
+  battery (SOC integrates net current, never assigned), piecewise LiFePO4 OCV
+  curve, IR sag, DCC50S bulk→absorption→float stage machine, solar bell
+  peaking at the van's *observed* 290W, per-metric noise + quantisation,
+  dropout capability.
+- `sim/loads.py` — fridge duty-cycle sawtooth (40% duty at 25°C ambient),
+  water pump bursts, scheduled events (cooktop/lights/fan), inverter AC→DC
+  losses.
+- `sim/scenarios.py` — the five seeded presets from PLAN §7, deterministic.
+- `sim/replay.py` — `ReplaySource`, .jsonl playback at N×, re-stamped to now.
+- `poller/store.py` — SQLite WAL; `samples` (48h) / `samples_1m` (30d) /
+  `tool_audit` (schema complete now, used at P4); incremental downsampling
+  with a high-water mark; retention pruning; `latest()`/`history()` reads.
+- `poller/derived.py` — net power, off-grid-only load derivation with
+  shore-power detection *from observables* (returns None rather than lying),
+  time-to-empty/full, daily solar yield.
+- `poller/__main__.py` — the `vanguard-poller` process; `poller/config.py` +
+  `config/devices.example.yaml` (real `devices.yaml` stays gitignored).
+
+What broke:
+- One verification check initially failed — my check's own time window was
+  wrong (50h window on a clock advanced 49h reaches only 1h into the
+  downsamples). Fixed the check, not the code.
+
+Verification: `scripts/verify_p1.py` — **20/20 checks pass**, including:
+determinism (same seed → byte-identical emissions), LiFePO4 flat band
+[13.29, 13.35] V at rest, solar peak exactly 290W and zero at night, coulomb
+consistency (ΔSOC 13.38% vs 13.38% from Ah counters), fridge duty 40%,
+dusk_low drains 42.0%→34.4% in 4h with time-to-empty 21.7h, shore_power
+honestly refuses load derivation, storage roundtrip + downsample + retention,
+replay at 60×.
+
+Screenshot: `sim/verify_p1_sunny24h.png` — flat voltage curve, fridge
+sawtooth, 290W solar bell. Looks like a van, not like a sine wave.
+
+Next: P2 — dashboard (dark, big tiles, 24h sparklines, SIM badge).
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>
