@@ -27,3 +27,6 @@ video/raw/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Generated demo runtime (scripts/demo.ps1)
+sim/captures/demo/
