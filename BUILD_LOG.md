@@ -229,6 +229,57 @@ the simulator, audit log, the cooktop answer.
 
 ---
 
+## 2026-07-25 — P4: Chat + tools. The cooktop question answers correctly.
+
+What I built:
+- `api/tools.py` — the six phase-1 tools (PLAN §7), read-only by
+  construction, every invocation audited to `tool_audit` (args, result
+  hash, serving device, duration). `get_history` returns stats not series
+  (98 bytes for a 4h window — context discipline). `get_tanks` is the
+  honest stub. `get_loads` returns null + reason on shore power.
+- `api/chat.py` — OpenAI-compatible `/v1/chat/completions` (the future
+  Master Index seam, PLAN §11). Native Qwen3/Hermes tool-calling loop:
+  render via the model's own chat template with tool schemas → parse
+  `<tool_call>` blocks → execute audited → feed back → max 3 rounds.
+  Engine loads lazily off the event loop; generation in a worker thread.
+- Dashboard: "Ask VanGuard" chat tile (device + tok/s + tools-used meta
+  under every answer) and the Tool audit tile — the governance beat,
+  on-screen: sees everything · touches nothing.
+
+What broke (three real findings, each now a regression check):
+1. **ov_genai silently re-applies the chat template** to raw prompts
+   (`GenerationConfig.apply_chat_template` defaults true) — my rendered
+   prompt got double-wrapped and the model never saw its tools ("I lack
+   real-time data"). Fixed: explicit `apply_chat_template = False`.
+2. **Greedy INT4 4B fumbles marginal comparisons.** Given "24 min to
+   floor" it answered both "25 < 24 → yes" and, previous run, flipped
+   verdicts mid-answer. Fix that actually holds: `estimate_runtime` now
+   takes `duration_min` and returns `soc_after_pct` +
+   `stays_above_20pct` — **the tool renders the verdict, the model renders
+   the language.** Verification asserts the spoken verdict equals the
+   tool's boolean.
+3. Verbosity/repetition: fixed with verdict-before-writing prompt rules +
+   `repetition_penalty 1.1`.
+
+Verification: `scripts/verify_p4.py` — **23/23**, including the money shot
+against dusk_low (SOC 38%, dusk, no PV):
+> "No, you cannot run the induction cooktop for 25 minutes without
+> dropping below 20% battery. … At 1700W draw, the system will reach 20%
+> SOC in 24 minutes … after 25 minutes, the battery will be at 19.6%."
+Correct, marginal (19.6% vs the 20% floor — genuinely close), math shown,
+tools used (`get_battery_state`, `estimate_runtime`), audited, served by
+GPU at ~38 tok/s, `simulated: true` stamped. Live smoke test on the full
+two-process system + headless screenshot of chat/audit tiles eyeballed.
+
+**Track P is complete. The system is filmable** (PLAN §8.1 beats 3, 4, and
+the benchmark overlay). Remaining before the cold open: shoot discipline —
+that beat needs M2/M3 live or replayed-real data, not SimSource.
+
+Next: Track M — M1 hardware handshake (BT-2 + van access), or video/
+SHOT_LIST.md prep, Frank's call.
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>

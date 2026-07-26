@@ -25,5 +25,8 @@ live:                  # M2 — requires the BT-2 dongle and M1 passing
 
 inference:             # P3+ — the model is a config value, not an architecture
   model_dir: ov_qwen3_4b_instruct_2507_int4_npu
-  device_order: [NPU, GPU, CPU]   # first that loads wins; serving device is
-                                  # recorded per request in tool_audit
+  device_order: [GPU, NPU, CPU]   # first that loads wins; serving device is
+                                  # recorded per request in tool_audit.
+                                  # GPU-first for interactive chat (TTFT 186ms
+                                  # vs 727ms — BENCHMARKS.md); flip to NPU
+                                  # first for the resident kiosk service.

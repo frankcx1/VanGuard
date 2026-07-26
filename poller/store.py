@@ -149,6 +149,16 @@ class Store:
             )
         return [(int(t), float(v)) for t, v in await cur.fetchall()]
 
+    async def audit_recent(self, limit: int = 50) -> list[dict]:
+        cur = await self._db.execute(
+            "SELECT ts, tool, args_json, result_hash, device, duration_ms "
+            "FROM tool_audit ORDER BY ts DESC, rowid DESC LIMIT ?", (limit,))
+        return [
+            {"ts": int(ts), "tool": tool, "args": args_json,
+             "result_hash": rh, "device": device, "duration_ms": dur}
+            for ts, tool, args_json, rh, device, dur in await cur.fetchall()
+        ]
+
     async def audit(self, tool: str, args_json: str, result_hash: str,
                     device: str | None, duration_ms: int) -> None:
         await self._db.execute(

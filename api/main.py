@@ -44,6 +44,12 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             await app.state.store.close()
 
     app = FastAPI(title="VanGuard", lifespan=lifespan)
+    app.state.cfg = cfg
+    app.state.simulated = simulated
+    app.state.engine = None
+
+    from api.chat import router as chat_router
+    app.include_router(chat_router)
 
     def stamp(payload: dict) -> dict:
         payload["simulated"] = simulated
@@ -91,6 +97,10 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             "resolution": "raw" if window_s <= RAW_RETENTION_S else "1m",
             "points": _decimate(points, max_points),
         })
+
+    @app.get("/api/audit")
+    async def audit(limit: int = Query(default=50, ge=1, le=500)):
+        return stamp({"entries": await app.state.store.audit_recent(limit)})
 
     @app.get("/")
     async def index():

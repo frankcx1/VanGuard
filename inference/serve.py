@@ -65,7 +65,15 @@ class InferenceEngine:
     def generate(self, prompt: str, max_new_tokens: int = 128,
                  temperature: float = 0.0) -> GenResult:
         cfg = ov_genai.GenerationConfig()
+        # Callers hand us fully-rendered prompts (chat template + tools
+        # already applied). ov_genai defaults to re-applying the model's
+        # template to raw strings, which double-wraps the prompt and buries
+        # the tool definitions inside a quoted user turn — turn that off.
+        cfg.apply_chat_template = False
         cfg.max_new_tokens = max_new_tokens
+        # Greedy INT4 4B models loop on their own phrasing; a mild penalty
+        # stops the "verdict restated five ways" failure mode.
+        cfg.repetition_penalty = 1.1
         if temperature > 0:
             cfg.do_sample = True
             cfg.temperature = temperature

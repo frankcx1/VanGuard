@@ -63,6 +63,24 @@
       <tbody></tbody>
     </table>
   </section>
+
+  <section class="tile wide chat-tile">
+    <div class="tile-head"><h2>Ask VanGuard</h2><span id="chat-meta" class="status plain"></span></div>
+    <div id="chat-log" aria-live="polite"></div>
+    <form id="chat-form">
+      <input id="chat-input" type="text" autocomplete="off"
+             placeholder="Can I run the cooktop for 25 minutes?">
+      <button id="chat-send" type="submit">Ask</button>
+    </form>
+  </section>
+
+  <section class="tile wide">
+    <div class="tile-head"><h2>Tool audit</h2><span class="status plain">sees everything · touches nothing</span></div>
+    <table id="audit-table" aria-label="Tool invocation audit log">
+      <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th><th>result hash</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
 </main>
 
 <footer>

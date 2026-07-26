@@ -226,6 +226,77 @@ function line(x1, y1, x2, y2, stroke, w) {
   return l;
 }
 
+/* ---- chat ------------------------------------------------------------------ */
+
+const chatHistory = [];   // client-side context, capped to keep prompts small
+
+async function sendChat(question) {
+  const log = $("chat-log"), input = $("chat-input"), btn = $("chat-send");
+  log.insertAdjacentHTML("beforeend",
+    `<div class="msg user">${escapeHtml(question)}</div>`);
+  const pending = document.createElement("div");
+  pending.className = "msg assistant pending";
+  pending.textContent = "thinking… (first question loads the model)";
+  log.appendChild(pending);
+  log.scrollTop = log.scrollHeight;
+  input.value = ""; btn.disabled = true;
+
+  chatHistory.push({ role: "user", content: question });
+  while (chatHistory.length > 8) chatHistory.shift();   // context discipline
+  try {
+    const r = await fetch("/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: chatHistory }),
+    });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    const data = await r.json();
+    const answer = data.choices[0].message.content;
+    chatHistory.push({ role: "assistant", content: answer });
+    const vg = data.vanguard ?? {};
+    const tools = (vg.tool_calls ?? []).map(t => t.tool).join(", ");
+    pending.classList.remove("pending");
+    pending.innerHTML = escapeHtml(answer) +
+      `<span class="meta">${vg.device ?? "?"} · ${vg.tokens_per_s ?? "?"} tok/s` +
+      (tools ? ` · tools: ${escapeHtml(tools)}` : " · no tools used") +
+      (vg.simulated ? " · SIM data" : "") + `</span>`;
+    refreshAudit();
+  } catch (e) {
+    pending.classList.remove("pending");
+    pending.innerHTML = `<em>error: ${escapeHtml(String(e.message))}</em>`;
+    chatHistory.pop();
+  } finally {
+    btn.disabled = false;
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+$("chat-form").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const q = $("chat-input").value.trim();
+  if (q && !$("chat-send").disabled) sendChat(q);
+});
+
+/* ---- audit view ------------------------------------------------------------ */
+
+async function refreshAudit() {
+  const r = await fetch("/api/audit?limit=25");
+  const { entries } = await r.json();
+  const tbody = $("audit-table").querySelector("tbody");
+  tbody.innerHTML = (entries ?? []).map(e =>
+    `<tr><td>${new Date(e.ts * 1000).toLocaleTimeString()}</td>` +
+    `<td>${escapeHtml(e.tool)}</td>` +
+    `<td><code>${escapeHtml(e.args)}</code></td>` +
+    `<td>${escapeHtml(e.device ?? "–")}</td>` +
+    `<td class="num">${e.duration_ms}</td>` +
+    `<td><code>${escapeHtml(e.result_hash)}</code></td></tr>`).join("");
+}
+
 /* ---- boot ------------------------------------------------------------------ */
 
 async function tick() {
@@ -238,5 +309,7 @@ async function tick() {
 }
 tick();
 refreshSparks();
+refreshAudit();
 setInterval(tick, REFRESH_LATEST_MS);
 setInterval(refreshSparks, REFRESH_HISTORY_MS);
+setInterval(refreshAudit, 15_000);
