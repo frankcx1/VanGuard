@@ -1,0 +1,16 @@
+[
+  {"name": "Long Beach", "lat": 49.0650, "lon": -125.7460, "type": "beach", "note": "16km of surf beach in Pacific Rim NP, walk it at low tide"},
+  {"name": "Cox Bay Beach", "lat": 49.1030, "lon": -125.8810, "type": "surf", "note": "Tofino's most consistent surf break, lessons at the resorts"},
+  {"name": "Chesterman Beach", "lat": 49.1280, "lon": -125.8930, "type": "beach", "note": "tidepools and a walkable sandbar to Frank Island at low tide"},
+  {"name": "Tonquin Beach Trail", "lat": 49.1500, "lon": -125.9180, "type": "hike", "note": "short rainforest boardwalk to a sheltered sunset cove, from town"},
+  {"name": "Rainforest Trail", "lat": 49.0310, "lon": -125.6580, "type": "hike", "note": "two 1km boardwalk loops through old-growth cedar and hemlock"},
+  {"name": "Schooner Cove Trail", "lat": 49.0520, "lon": -125.7200, "type": "hike", "note": "1km boardwalk down to the quiet north end of Long Beach"},
+  {"name": "Radar Hill", "lat": 49.0860, "lon": -125.8320, "type": "overlook", "note": "drive-up WWII radar site, Clayoquot Sound panorama"},
+  {"name": "Kwisitis Visitor Centre", "lat": 49.0100, "lon": -125.6760, "type": "info", "note": "exhibits on Nuu-chah-nulth culture, above Wickaninnish Beach"},
+  {"name": "Green Point Campground", "lat": 49.0770, "lon": -125.8120, "type": "camp", "note": "the only campground inside Pacific Rim NP, book ahead"},
+  {"name": "Tofino Brewing Co", "lat": 49.1390, "lon": -125.8960, "type": "food", "note": "tasting room by the harbour, kelp stout is the local one"},
+  {"name": "Tacofino", "lat": 49.1280, "lon": -125.8850, "type": "food", "note": "the original food truck, fish tacos worth the line"},
+  {"name": "Meares Island Big Tree Trail", "lat": 49.1750, "lon": -125.8850, "type": "paddle", "note": "water taxi or kayak from town, 1500-year-old cedars"},
+  {"name": "Hot Springs Cove", "lat": 49.3600, "lon": -126.2650, "type": "tour", "note": "natural hot springs, boat or floatplane day trip from Tofino"},
+  {"name": "Wild Pacific Trail", "lat": 48.9250, "lon": -125.5450, "type": "hike", "note": "clifftop loop at Ucluelet lighthouse, storm-watching favourite"}
+]

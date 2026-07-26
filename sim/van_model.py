@@ -130,10 +130,15 @@ class SolarArray:
 class VanModel:
     """Steps the whole electrical system forward and exposes device readings."""
 
-    def __init__(self, scenario, rng: random.Random, loads: LoadBank):
+    def __init__(self, scenario, rng: random.Random, loads: LoadBank,
+                 hvac=None, gps=None):
         self.scn = scenario
         self.rng = rng
         self.loads = loads
+        self.hvac = hvac
+        self.gps = gps
+        self.hvac_w = 0.0
+        self.alt_w = 0.0
         self.battery = Battery(scenario.start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
@@ -164,15 +169,28 @@ class VanModel:
         self.pv_w = self.solar.power_w(clock_h, dt_s)
         self.load_w = self.loads.step(dt_s, sim_h, clock_h)
 
+        if self.gps is not None:
+            self.gps.step(dt_s)
+        if self.hvac is not None:
+            sun_frac = self.pv_w / self.scn.pv_peak_w if self.scn.pv_peak_w > 0 else 0.0
+            self.hvac_w = self.hvac.step(dt_s, self.ambient_c(), sun_frac)
+            self.load_w += self.hvac_w
+
         v = self.batt_v if self.batt_v > 9.5 else 12.8
         i_load = self.load_w / v
 
-        # Charge sources: MPPT from PV, plus the inverter/charger on shore
-        # power (invisible to the DCC50S — that blindness is modelled, not a
+        # Charge sources: MPPT from PV, alternator through the DCC50S while
+        # the engine runs, plus the inverter/charger on shore power
+        # (invisible to the DCC50S — that blindness is modelled, not a
         # bug: it's what breaks load derivation on shore, PLAN §3).
         i_pv = self.pv_w * CHARGE_EFFICIENCY / v
+        engine_on = self.scn.alternator_a > 0 and (
+            self.gps is None or self.scn.route is None or self.gps.moving)
+        i_alt = self.scn.alternator_a if engine_on else 0.0
+        i_alt = max(0.0, min(50.0 - i_pv, i_alt))   # DCC50S is a 50A device
+        self.alt_w = i_alt * v
         i_shore = self.scn.shore_charger_a
-        i_charge_avail = i_pv + i_shore
+        i_charge_avail = i_pv + i_alt + i_shore
 
         i_charge = self._charge_stage_limit(i_charge_avail, dt_s)
         i_net = i_charge - i_load
@@ -182,6 +200,15 @@ class VanModel:
         if i_pv > 0 and i_charge > 0:
             pv_share = min(1.0, i_pv / max(i_charge_avail, 1e-9))
             self.daily_yield_wh += self.pv_w * pv_share * dt_s / 3600.0
+
+    def apply_command(self, cmd: dict) -> bool:
+        """Human-initiated control (P5 demo). Only the sim accepts these."""
+        if cmd.get("target") == "hvac" and self.hvac is not None:
+            mode_map = {"off": 0.0, "heat": 1.0, "cool": 2.0}
+            mode = mode_map.get(cmd.get("mode")) if "mode" in cmd else None
+            self.hvac.command(mode=mode, setpoint_c=cmd.get("setpoint_c"))
+            return True
+        return False
 
     def _charge_stage_limit(self, i_avail: float, dt_s: float) -> float:
         """DCC50S bulk → absorption → float state machine."""
@@ -285,8 +312,22 @@ class SimSource(TelemetrySource):
             add("dcc50s", "pv_voltage_v", pv_v, 0.05, 0.1)
             add("dcc50s", "pv_current_a", pv_w / pv_v if pv_v > 1 else 0.0, 0.03, 0.01)
             add("dcc50s", "pv_power_w", pv_w, 0.8, 1.0)
-            add("dcc50s", "alt_power_w", 0.0, 0.0, 1.0)   # engine-off van; M2 wires this
+            add("dcc50s", "alt_power_w", m.alt_w, 1.0 if m.alt_w > 0 else 0.0, 1.0)
             add("dcc50s", "charge_current_a", max(0.0, i + m.load_w / max(v, 1.0)), 0.05, 0.01)
             add("dcc50s", "controller_temp_c", m.ambient_c() + pv_w / 300.0 * 14.0, 0.3, 1.0)
             add("dcc50s", "daily_yield_wh", m.daily_yield_wh, 0.0, 1.0)
+        if m.hvac is not None:     # cabin sensor round (P5 demo; BLE thermometer later)
+            add("hvac", "cabin_temp_c", m.hvac.cabin_c, 0.05, 0.1)
+            add("hvac", "mode", m.hvac.mode, 0.0, 1.0)
+            add("hvac", "setpoint_c", m.hvac.setpoint_c, 0.0, 0.5)
+            add("hvac", "hvac_power_w", m.hvac_w, 0.0, 1.0)
+        if m.gps is not None:      # GPS round (USB NMEA unit later)
+            add("gps", "lat", m.gps.lat, 0.00002, 0.00001)   # ~2m fix jitter
+            add("gps", "lon", m.gps.lon, 0.00002, 0.00001)
+            add("gps", "speed_mph", m.gps.speed_mph, 0.2, 0.1)
+            add("gps", "heading_deg", m.gps.heading, 0.0, 1.0)
+            add("gps", "trip_mi", m.gps.trip_mi, 0.0, 0.1)
         return out
+
+    def apply_command(self, cmd: dict) -> bool:
+        return self.model.apply_command(cmd)

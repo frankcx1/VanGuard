@@ -512,6 +512,21 @@ than one tangled one.
 
 ---
 
+## 12.5 Demo mode and the road to real (added 2026-07-26, P5)
+
+P5 added demo-mode features Frank asked for. Each is honest about what's
+simulated and has a defined path to real hardware:
+
+| Feature | Demo (now) | Real (later) |
+|---|---|---|
+| Charge-source tile | derived from DCC50S PV/alt watts; shore is **inferred** and labeled so | same code on live data (M2) |
+| Alerts | thresholds in config, banner + `/api/alerts` | unchanged on live data |
+| Cabin temp | simulated | **BLE thermometer (~$20 Govee/SwitchBot)** — add to the M1 order alongside the BT-2 |
+| Climate control | sim-only; human-only buttons; poller-level refusal on live sources | phase 2. Real A/C is Tuya/Smart Life **cloud** (needs Tuya local-key work); heater is Webasto BLE SmartTemp (undocumented protocol). Both research items, not v1 |
+| Voice | **fully real already** — Whisper base.en on OpenVINO (GPU), browser records raw PCM, zero cloud | maybe NPU serving; better mic at M4 kiosk |
+| Trip keeper | simulated GPS on a Tofino route; **offline curated POI dataset** | **USB GPS (u-blox NMEA, ~$15)** — M1 order; POI data stays offline by design (bigger regional dataset is a data problem, not code) |
+| Actuation rule | commands table: human-initiated, audited as HUMAN, sim-gated | phase 2 keeps the same queue + explicit confirmation |
+
 ## 12. Ground rules (carried forward from the brief)
 
 - **Greenfield repo.** No prior Microsoft-era code, ever.

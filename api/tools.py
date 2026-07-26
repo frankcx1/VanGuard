@@ -126,6 +126,45 @@ class ToolRunner:
         return {"available": False,
                 "note": "no tank level sensors installed (PLAN.md open question 3)"}
 
+    async def tool_get_climate(self) -> dict:
+        rd = await self.store.latest()
+        hv = {m: v for m, (ts, v) in rd.get("hvac", {}).items()}
+        if not hv:
+            return {"error": "no climate data"}
+        mode = {0.0: "off", 1.0: "heat", 2.0: "cool"}.get(hv.get("mode"), "off")
+        return {
+            "cabin_temp_c": _r(hv.get("cabin_temp_c")),
+            "mode": mode,
+            "setpoint_c": _r(hv.get("setpoint_c")),
+            "hvac_power_w": _r(hv.get("hvac_power_w"), 0),
+            "note": "read-only; controls are human-only via the dashboard",
+        }
+
+    async def tool_get_trip_status(self) -> dict:
+        rd = await self.store.latest()
+        gps = {m: v for m, (ts, v) in rd.get("gps", {}).items()}
+        if not gps:
+            return {"error": "no GPS fix"}
+        return {
+            "lat": _r(gps.get("lat"), 4), "lon": _r(gps.get("lon"), 4),
+            "speed_mph": _r(gps.get("speed_mph")),
+            "moving": (gps.get("speed_mph") or 0) > 2.0,
+            "trip_mi": _r(gps.get("trip_mi")),
+        }
+
+    async def tool_get_nearby_pois(self, radius_mi: float = 15.0,
+                                   limit: int = 5) -> dict:
+        from sim.gps import nearby_pois
+        rd = await self.store.latest()
+        gps = {m: v for m, (ts, v) in rd.get("gps", {}).items()}
+        if "lat" not in gps:
+            return {"error": "no GPS fix"}
+        radius_mi = max(1.0, min(100.0, float(radius_mi)))
+        pois = nearby_pois(gps["lat"], gps["lon"], radius_mi,
+                           limit=max(1, min(8, int(limit))))
+        return {"radius_mi": radius_mi, "pois": pois,
+                "source": "offline curated dataset"}
+
     async def tool_estimate_runtime(self, load_watts: float,
                                     duration_min: float | None = None) -> dict:
         load_watts = float(load_watts)
@@ -186,6 +225,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "name": "get_tanks",
         "description": "Tank levels (no sensors installed; returns unavailable).",
         "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "get_climate",
+        "description": "Cabin temp C, HVAC mode/setpoint, HVAC watts. Read-only.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "get_trip_status",
+        "description": "GPS: position, speed mph, moving flag, trip miles.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "get_nearby_pois",
+        "description": "Things to do near the van from the offline POI dataset: name, type, distance mi, note.",
+        "parameters": {"type": "object", "properties": {
+            "radius_mi": {"type": "number", "minimum": 1, "maximum": 100},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 8}},
+            "required": []}}},
     {"type": "function", "function": {
         "name": "estimate_runtime",
         "description": ("Runtime for a DC load from current SOC. Pass "

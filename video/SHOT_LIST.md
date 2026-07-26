@@ -59,6 +59,16 @@ M3 replay of a real capture).
 
 ## Beat 2 — reveal (8s) & Beat 5 — kicker (5s) · NEEDS VAN + LOCATION · M4
 
+## Demo-mode shots (P5, added 2026-07-26) · Pro only · READY
+
+| Shot | Setup | The moment |
+|---|---|---|
+| Voice question | any scenario; hold 🎤, ask "what's my battery level?" | fully offline Whisper→LLM→tools round trip; caption "no cloud heard that" |
+| A/C hits the battery | `demo.ps1 -Scenario sunny_midday`, press Cool | net power dives ~900W within one poll; ask "how long can the A/C run?" |
+| Road trip | `demo.ps1 -Scenario road_trip` | Charging From shows ☀️+🚐 while driving; Trip tile counts miles into Tofino |
+| Trip advice | road_trip parked, ask "what should we do nearby?" | POIs from the **offline** dataset, battery reality woven in |
+| Low-battery warning | `demo.ps1 -Scenario dusk_low` (seeds to ~38%; wait or ask about loads) | alert banner: honest thresholds, not drama |
+
 ## Practical notes
 
 - Chat serves on **GPU** by default (TTFT 186 ms — feels instant on

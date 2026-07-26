@@ -44,5 +44,14 @@ class TelemetrySource(ABC):
     async def poll(self) -> list[Sample]:
         """Return one round of readings across all devices."""
 
+    def apply_command(self, cmd: dict) -> bool:
+        """Human-initiated control command. Read-only sources refuse.
+
+        Phase 1 is read-only by construction: the default is refusal, and
+        LiveSource keeps that default until phase 2 lands with its explicit
+        human-confirmation gate. Only SimSource overrides this (demo mode).
+        """
+        return False
+
     async def close(self) -> None:
         return None

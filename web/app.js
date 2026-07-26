@@ -76,7 +76,76 @@ async function refreshLatest() {
   $("pv-yield").textContent = yld == null ? "–" : `${yld.toFixed(0)} Wh today`;
 
   setLoadTile(dv);
+  setChargeTile(dv?.charge_source);
+  setClimateTile(rd);
   fillTable(rd, data.server_ts);
+}
+
+const SRC_ICONS = { "solar": "☀️ Solar", "alternator": "🚐 Alternator", "shore (inferred)": "🔌 Shore (inferred)" };
+
+function setChargeTile(cs) {
+  const el = $("charge-src"), det = $("charge-detail");
+  if (!cs) { el.textContent = "–"; return; }
+  if (cs.sources.length) {
+    el.textContent = cs.sources.map(s => SRC_ICONS[s] ?? s).join(" + ");
+  } else {
+    el.textContent = cs.charging ? "unknown source" : "not charging";
+  }
+  det.textContent = `solar ${cs.solar_w} W · alternator ${cs.alternator_w} W`;
+}
+
+function setClimateTile(rd) {
+  const hv = rd?.hvac;
+  if (!hv) return;
+  $("cabin-temp").textContent = hv.cabin_temp_c ? hv.cabin_temp_c.value.toFixed(1) : "–";
+  const mode = { 0: "off", 1: "heat", 2: "cool" }[hv.mode?.value] ?? "off";
+  const running = (hv.hvac_power_w?.value ?? 0) > 1;
+  $("hvac-state").textContent = mode === "off" ? "" :
+    `${mode} → ${hv.setpoint_c?.value}°C${running ? " · running" : " · idle"}`;
+  document.querySelectorAll(".seg button").forEach(b =>
+    b.classList.toggle("active", b.dataset.mode === mode));
+}
+
+document.querySelectorAll(".seg button").forEach(btn =>
+  btn.addEventListener("click", () => sendHvac({ mode: btn.dataset.mode })));
+$("setpoint").addEventListener("change", () =>
+  sendHvac({ setpoint_c: parseFloat($("setpoint").value) }));
+
+async function sendHvac(cmd) {
+  try {
+    const r = await fetch("/api/hvac", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cmd),
+    });
+    if (!r.ok) $("hvac-note").textContent = (await r.json()).detail ?? "refused";
+    else $("hvac-note").textContent = "command queued · applies within one poll";
+    refreshAudit();
+  } catch { $("hvac-note").textContent = "API unreachable"; }
+}
+
+async function refreshTrip() {
+  const r = await fetch("/api/trip");
+  const t = await r.json();
+  if (!t.fix) { $("trip-pos").textContent = "no GPS fix"; return; }
+  $("trip-mi").textContent = t.miles_today.toFixed(1);
+  $("trip-state").textContent = t.fix.moving
+    ? `moving · ${t.fix.speed_mph.toFixed(0)} mph` : "parked";
+  $("trip-pos").textContent =
+    `${t.fix.lat.toFixed(4)}, ${t.fix.lon.toFixed(4)}`;
+  $("poi-list").innerHTML = (t.nearby ?? []).slice(0, 4).map(p =>
+    `<li>${escapeHtml(p.name)} <span class="dist">· ${p.type} · ${p.dist_mi} mi</span></li>`
+  ).join("");
+}
+
+async function refreshAlerts() {
+  const r = await fetch("/api/alerts");
+  const { alerts } = await r.json();
+  const banner = $("alert-banner");
+  if (!alerts || alerts.length === 0) { banner.className = "hidden"; return; }
+  const worst = alerts.some(a => a.severity === "critical") ? "critical" : "warning";
+  banner.className = worst;
+  banner.textContent = (worst === "critical" ? "✖ " : "⚠ ") +
+    alerts.map(a => a.message).join("  ·  ");
 }
 
 function setSocStatus(soc) {
@@ -282,6 +351,82 @@ $("chat-form").addEventListener("submit", ev => {
   if (q && !$("chat-send").disabled) sendChat(q);
 });
 
+/* ---- voice: raw 16kHz PCM → WAV → offline Whisper -------------------------- */
+
+const rec = { ctx: null, stream: null, node: null, chunks: [], active: false };
+
+async function startRecording() {
+  rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  rec.ctx = new AudioContext({ sampleRate: 16000 });
+  const src = rec.ctx.createMediaStreamSource(rec.stream);
+  rec.node = rec.ctx.createScriptProcessor(4096, 1, 1);
+  rec.chunks = [];
+  rec.node.onaudioprocess = e => {
+    if (rec.active) rec.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  src.connect(rec.node);
+  rec.node.connect(rec.ctx.destination);
+  rec.active = true;
+  $("chat-mic").classList.add("recording");
+}
+
+async function stopRecording() {
+  rec.active = false;
+  $("chat-mic").classList.remove("recording");
+  rec.node?.disconnect();
+  rec.stream?.getTracks().forEach(t => t.stop());
+  const rate = rec.ctx.sampleRate;      // ctx may not honour 16k; send actual
+  await rec.ctx.close();
+  const n = rec.chunks.reduce((s, c) => s + c.length, 0);
+  if (n < rate / 4) return;             // <0.25s — ignore stray clicks
+  const pcm = new Float32Array(n);
+  let off = 0;
+  for (const c of rec.chunks) { pcm.set(c, off); off += c.length; }
+  const wav = encodeWav(rate === 16000 ? pcm : resampleTo16k(pcm, rate));
+  const input = $("chat-input");
+  input.placeholder = "transcribing…";
+  try {
+    const r = await fetch("/api/transcribe", { method: "POST", body: wav });
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    const { text } = await r.json();
+    if (text) { input.value = text; sendChat(text); input.value = ""; }
+    else input.placeholder = "didn't catch that — try again";
+  } catch (e) {
+    input.placeholder = `voice error: ${e.message}`;
+  } finally {
+    setTimeout(() => { input.placeholder = "Can I run the cooktop for 25 minutes?"; }, 4000);
+  }
+}
+
+function resampleTo16k(pcm, fromRate) {
+  const ratio = fromRate / 16000;
+  const out = new Float32Array(Math.floor(pcm.length / ratio));
+  for (let i = 0; i < out.length; i++) out[i] = pcm[Math.floor(i * ratio)];
+  return out;
+}
+
+function encodeWav(pcm) {
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE");
+  w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, 16000, true);
+  v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) {
+    v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+const micBtn = $("chat-mic");
+micBtn.addEventListener("mousedown", () => startRecording().catch(e => {
+  $("chat-input").placeholder = `mic error: ${e.message}`;
+}));
+micBtn.addEventListener("mouseup", () => { if (rec.active) stopRecording(); });
+micBtn.addEventListener("mouseleave", () => { if (rec.active) stopRecording(); });
+
 /* ---- audit view ------------------------------------------------------------ */
 
 async function refreshAudit() {
@@ -301,7 +446,7 @@ async function refreshAudit() {
 
 async function tick() {
   try {
-    await Promise.all([refreshLatest(), refreshStatus()]);
+    await Promise.all([refreshLatest(), refreshStatus(), refreshAlerts()]);
   } catch (e) {
     $("stale-chip").classList.remove("hidden");
     $("stale-chip").textContent = "⚠ API UNREACHABLE";
@@ -310,6 +455,8 @@ async function tick() {
 tick();
 refreshSparks();
 refreshAudit();
+refreshTrip();
 setInterval(tick, REFRESH_LATEST_MS);
 setInterval(refreshSparks, REFRESH_HISTORY_MS);
 setInterval(refreshAudit, 15_000);
+setInterval(refreshTrip, 10_000);

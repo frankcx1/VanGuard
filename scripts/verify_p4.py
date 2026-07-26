@@ -105,8 +105,8 @@ def parsing_checks() -> None:
     check("malformed JSON flagged, not fatal",
           parse_tool_calls('<tool_call>{"name": broken}</tool_call>')[0]["name"] == "_malformed")
     check("plain text → no calls", parse_tool_calls("SOC is 42%.") == [])
-    check("6 tool schemas, all read-only names",
-          len(TOOL_SCHEMAS) == 6
+    check("9 tool schemas, all read-only names",
+          len(TOOL_SCHEMAS) == 9
           and all(f["function"]["name"].startswith(("get_", "estimate_"))
                   for f in TOOL_SCHEMAS))
 
@@ -166,9 +166,9 @@ def model_checks(db: Path) -> None:
               vg["device"])
 
         audit = c.get("/api/audit").json()
-        check("audit endpoint shows the calls with serving device",
-              any(e["tool"] == "get_battery_state" and e["device"] == vg["device"]
-                  for e in audit["entries"]))
+        check("every tool used is audited with the serving device",
+              all(any(e["tool"] == t and e["device"] == vg["device"]
+                      for e in audit["entries"]) for t in set(tools_used)))
 
 
 def main() -> int:

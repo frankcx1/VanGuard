@@ -71,6 +71,31 @@ def solar_yield_wh_today(readings: dict) -> float | None:
     return _get(readings, "dcc50s", "daily_yield_wh")
 
 
+def charge_source(readings: dict) -> dict:
+    """Which system is charging the battery, from observables.
+
+    Solar and alternator are measured at the DCC50S; shore power is
+    inferred (the inverter/charger is CAN-only and invisible), so it is
+    always labeled inferred, never presented as a measurement.
+    """
+    pv = _get(readings, "dcc50s", "pv_power_w") or 0.0
+    alt = _get(readings, "dcc50s", "alt_power_w") or 0.0
+    i = _get(readings, "shunt", "current_a")
+    sources = []
+    if pv >= VISIBLE_SOURCE_FLOOR_W:
+        sources.append("solar")
+    if alt >= VISIBLE_SOURCE_FLOOR_W:
+        sources.append("alternator")
+    if shore_power_suspected(readings):
+        sources.append("shore (inferred)")
+    charging = i is not None and i > 0.5
+    return {
+        "charging": charging,
+        "sources": sources if charging or sources else [],
+        "solar_w": round(pv), "alternator_w": round(alt),
+    }
+
+
 def all_derived(readings: dict) -> dict[str, float | bool | None]:
     """The bundle the API will expose; None means honestly unavailable."""
     return {
@@ -80,4 +105,5 @@ def all_derived(readings: dict) -> dict[str, float | bool | None]:
         "time_to_empty_h": time_to_empty_h(readings),
         "time_to_full_h": time_to_full_h(readings),
         "solar_yield_wh_today": solar_yield_wh_today(readings),
+        "charge_source": charge_source(readings),
     }

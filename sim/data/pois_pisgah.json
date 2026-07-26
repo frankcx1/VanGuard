@@ -1,0 +1,14 @@
+[
+  {"name": "Mount Pisgah Trailhead", "lat": 35.4076, "lon": -82.7463, "type": "hike", "note": "2.6mi round trip to the summit tower, steep finish, big views"},
+  {"name": "Pisgah Inn", "lat": 35.4022, "lon": -82.7532, "type": "food", "note": "restaurant on the ridge, sunset dining"},
+  {"name": "Mount Pisgah Campground", "lat": 35.4009, "lon": -82.7566, "type": "camp", "note": "highest campground on the Parkway, ~5000ft"},
+  {"name": "Graveyard Fields", "lat": 35.3203, "lon": -82.8470, "type": "hike", "note": "waterfall loop, blueberries late summer, arrive early"},
+  {"name": "Looking Glass Rock Overlook", "lat": 35.3106, "lon": -82.8098, "type": "overlook", "note": "granite dome view, best light late afternoon"},
+  {"name": "Sliding Rock", "lat": 35.3097, "lon": -82.7841, "type": "swim", "note": "natural 60ft rock waterslide, cold water"},
+  {"name": "Cradle of Forestry", "lat": 35.3520, "lon": -82.7780, "type": "museum", "note": "birthplace of American forestry, easy paved trails"},
+  {"name": "Mills River Valley Overlook", "lat": 35.4210, "lon": -82.7130, "type": "overlook", "note": "east-facing, good sunrise pulloff"},
+  {"name": "Lake Powhatan Recreation Area", "lat": 35.4839, "lon": -82.6270, "type": "swim", "note": "swimming beach and fishing, bike access to Bent Creek"},
+  {"name": "Bent Creek Experimental Forest", "lat": 35.4900, "lon": -82.6290, "type": "bike", "note": "big mountain-bike trail network, gravel climbs"},
+  {"name": "NC Arboretum", "lat": 35.4990, "lon": -82.6100, "type": "garden", "note": "434 acres of cultivated gardens and bonsai collection"},
+  {"name": "Blue Ridge Parkway Visitor Center", "lat": 35.5652, "lon": -82.4870, "type": "info", "note": "trip maps, exhibits, milepost 384"}
+]

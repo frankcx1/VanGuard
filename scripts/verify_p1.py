@@ -136,7 +136,8 @@ def main() -> int:
     for k in range(200):
         src.advance(30)
         rounds.append(src.emit(FIXED_EPOCH + k))
-    partial = sum(1 for e in rounds if len(e) < 14)
+    full = max(len(e) for e in rounds)
+    partial = sum(1 for e in rounds if len(e) < full)
     check("sim can emit missing/stale rounds", partial > 20, f"{partial}/200 rounds degraded")
 
     print("== storage roundtrip ==")

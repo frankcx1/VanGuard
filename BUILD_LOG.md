@@ -280,6 +280,49 @@ SHOT_LIST.md prep, Frank's call.
 
 ---
 
+## 2026-07-26 — P5: Demo mode — charging source, alerts, climate, voice, trip
+
+Frank's scenario list from last night, built as demo mode (each feature's
+path to real hardware recorded in PLAN §12.5):
+
+- **Charging From tile** — ☀️ Solar / 🚐 Alternator measured at the DCC50S,
+  🔌 Shore always labeled *(inferred)* because the charger is CAN-only.
+  Sim grew an alternator (active while driving, capped at the DCC50S's 50A).
+- **Alerts** — thresholds in config (SOC 30/15%, volts, time-to-empty,
+  staleness), banner on the dashboard, `/api/alerts`.
+- **Climate** — cabin temp + HVAC sim where the A/C's ~900W draw hits the
+  battery model (turn on Cool, watch net power dive — the demo moment).
+  Controls are **human-only and sim-gated**: commands go through a
+  `commands` table the poller applies; audited as device=HUMAN; a live
+  source refuses at both the API (403) and the poller (phase-1 read-only
+  default). The AI's get_climate is read-only.
+- **Voice — fully real, zero cloud.** Browser records raw 16kHz PCM (no
+  cloud speech APIs), `/api/transcribe` runs whisper-base.en on OpenVINO
+  (GPU). Verified end-to-end with Windows SAPI-synthesized speech:
+  transcript came back **verbatim**.
+- **Trip keeper** — simulated GPS along a Pacific Rim Hwy route into
+  Tofino, BC (Frank's pick; the Pisgah dataset survives as
+  `pois_pisgah.json`), trip odometer, and get_nearby_pois over an
+  **offline curated POI dataset** — no cloud places API, honestly labeled.
+  Three new read-only tools (9 total): get_climate, get_trip_status,
+  get_nearby_pois.
+
+What broke / got tightened:
+- track_miles teleport filter (1mi) ate real driving segments when poll
+  cadence stretched under CPU load — loosened to >5mi with adaptive stride.
+- The model freelanced a runtime claim ("9 hours at 1500W", real answer
+  1.3h) in an open-ended trip question — system prompt now forbids stating
+  any runtime estimate_runtime didn't produce. Cooktop e2e re-verified.
+- Alert test seeded 6h of dusk_low → SOC 31%, one point above the 30%
+  threshold. Test bug, not code; seeded 8h.
+
+Verification: verify_p5 **23/23** (including the SAPI→Whisper round trip
+and the live-source 403/refusal gates), and full regression: P1 20/20,
+P2 13/13, P4 23/23. Road-trip dashboard screenshot eyeballed: charging
+tile, climate controls, Tofino POIs, mic button, HUMAN rows in the audit.
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>

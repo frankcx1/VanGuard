@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 
 from poller.config import build_source, load_config
@@ -28,6 +29,11 @@ async def run(cfg: dict) -> None:
     since_maintenance = 0.0
     try:
         while True:
+            for cmd_id, payload in await store.pending_commands():
+                ok = source.apply_command(json.loads(payload))
+                await store.mark_command(cmd_id, ok)
+                log.info("command %d %s: %s", cmd_id,
+                         "applied" if ok else "REFUSED (read-only source)", payload)
             samples = await source.poll()
             await store.write(samples)
             if samples:

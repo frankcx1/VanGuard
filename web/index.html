@@ -19,6 +19,8 @@
   </div>
 </header>
 
+<div id="alert-banner" class="hidden"></div>
+
 <main class="grid">
   <section class="tile hero">
     <div class="tile-head"><h2>Battery</h2><span id="soc-status" class="status"></span></div>
@@ -57,6 +59,33 @@
   </section>
 
   <section class="tile">
+    <div class="tile-head"><h2>Charging from</h2></div>
+    <div class="big charge-src" id="charge-src">–</div>
+    <div class="row sub2"><span id="charge-detail">–</span></div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>Climate</h2><span id="hvac-state" class="status plain"></span></div>
+    <div class="big"><span id="cabin-temp">–</span><span class="unit">°C inside</span></div>
+    <div class="hvac-controls">
+      <div class="seg" role="group" aria-label="HVAC mode">
+        <button data-mode="off">Off</button>
+        <button data-mode="heat">Heat</button>
+        <button data-mode="cool">Cool</button>
+      </div>
+      <label>set <input id="setpoint" type="number" min="10" max="32" step="0.5" value="21"> °C</label>
+    </div>
+    <div class="row sub2"><span id="hvac-note">sim control · live control is phase 2</span></div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>Trip</h2><span id="trip-state" class="status plain"></span></div>
+    <div class="big"><span id="trip-mi">–</span><span class="unit">mi today</span></div>
+    <div class="row sub2"><span id="trip-pos">–</span></div>
+    <ul id="poi-list"></ul>
+  </section>
+
+  <section class="tile">
     <div class="tile-head"><h2>All readings</h2></div>
     <table id="readings-table" aria-label="Latest raw readings">
       <thead><tr><th>device</th><th>metric</th><th class="num">value</th><th>age</th></tr></thead>
@@ -70,6 +99,7 @@
     <form id="chat-form">
       <input id="chat-input" type="text" autocomplete="off"
              placeholder="Can I run the cooktop for 25 minutes?">
+      <button id="chat-mic" type="button" title="Hold to talk (offline Whisper)">🎤</button>
       <button id="chat-send" type="submit">Ask</button>
     </form>
   </section>

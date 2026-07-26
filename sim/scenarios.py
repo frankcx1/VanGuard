@@ -12,6 +12,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 
+from sim.climate import Hvac
+from sim.gps import GpsTrack
 from sim.loads import Fridge, LoadBank, LoadEvent, WaterPump
 from sim.van_model import VanModel
 
@@ -31,6 +33,13 @@ class Scenario:
     shore_charger_a: float = 0.0   # inverter/charger output on shore power
     dropout_rate: float = 0.0      # per-device chance a poll round goes missing
     events: tuple[LoadEvent, ...] = field(default_factory=tuple)
+    # P5 demo mode:
+    alternator_a: float = 0.0      # DC-DC input while the engine runs
+    position: tuple[float, float] | None = None   # fixed campsite (lat, lon)
+    route: str | None = None       # route name → drives along sim/data/route_*.json
+    drive_mph: float = 0.0
+    hvac_mode: float = 0.0         # 0 off, 1 heat, 2 cool (initial)
+    hvac_setpoint_c: float = 21.0
 
 
 PRESETS: dict[str, Scenario] = {
@@ -71,6 +80,15 @@ PRESETS: dict[str, Scenario] = {
         start_soc=30.0, start_hour=10.0, ambient_c=17.0,
         weather="cloudy", pv_peak_w=290.0, base_load_w=25.0,
     ),
+    # P5 demo: driving the Pacific Rim Hwy into Tofino — alternator charging
+    # while moving, GPS tracking the route, trip keeper advising on what's
+    # nearby. Parks in Tofino when the route ends (~45 min at 32 mph).
+    "road_trip": Scenario(
+        name="road_trip", seed=606,
+        start_soc=72.0, start_hour=10.5, ambient_c=17.0,
+        weather="clear", pv_peak_w=290.0, base_load_w=25.0,
+        alternator_a=40.0, route="tofino", drive_mph=32.0,
+    ),
 }
 
 
@@ -97,4 +115,8 @@ def build_model(scn: Scenario) -> tuple[VanModel, random.Random]:
         pump=WaterPump(rng) if scn.pump else None,
         events=list(scn.events),
     )
-    return VanModel(scn, rng, loads), rng
+    hvac = Hvac(cabin_c=scn.ambient_c + 2.0, mode=scn.hvac_mode,
+                setpoint_c=scn.hvac_setpoint_c)
+    gps = GpsTrack(scn.seed, position=scn.position, route=scn.route,
+                   speed_mph=scn.drive_mph)
+    return VanModel(scn, rng, loads, hvac=hvac, gps=gps), rng

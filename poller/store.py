@@ -48,6 +48,14 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS commands (  -- human control commands (P5 demo);
+  id INTEGER PRIMARY KEY,              -- the poller applies them to the source
+  ts INTEGER NOT NULL,
+  payload_json TEXT NOT NULL,
+  applied INTEGER NOT NULL DEFAULT 0,  -- 0 pending, 1 applied, -1 refused
+  applied_ts INTEGER
+);
 """
 
 RAW_RETENTION_S = 48 * 3600
@@ -148,6 +156,26 @@ class Store:
                 (source, metric, since),
             )
         return [(int(t), float(v)) for t, v in await cur.fetchall()]
+
+    # -- control commands (P5 demo; poller applies, sim-only) --------------------
+
+    async def enqueue_command(self, payload_json: str) -> int:
+        cur = await self._db.execute(
+            "INSERT INTO commands (ts, payload_json) VALUES (?, ?)",
+            (int(time.time()), payload_json))
+        await self._db.commit()
+        return cur.lastrowid
+
+    async def pending_commands(self) -> list[tuple[int, str]]:
+        cur = await self._db.execute(
+            "SELECT id, payload_json FROM commands WHERE applied = 0 ORDER BY id")
+        return [(int(i), p) for i, p in await cur.fetchall()]
+
+    async def mark_command(self, cmd_id: int, applied: bool) -> None:
+        await self._db.execute(
+            "UPDATE commands SET applied = ?, applied_ts = ? WHERE id = ?",
+            (1 if applied else -1, int(time.time()), cmd_id))
+        await self._db.commit()
 
     async def audit_recent(self, limit: int = 50) -> list[dict]:
         cur = await self._db.execute(
