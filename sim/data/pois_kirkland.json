@@ -1,0 +1,16 @@
+[
+  {"name": "Juanita Bay Park", "lat": 47.6924, "lon": -122.2095, "type": "nature", "note": "wetland boardwalks over Lake Washington, turtles and eagles"},
+  {"name": "Juanita Beach Park", "lat": 47.6975, "lon": -122.2117, "type": "swim", "note": "sandy swimming beach with a wrap-around pier"},
+  {"name": "Marina Park", "lat": 47.6767, "lon": -122.2086, "type": "waterfront", "note": "downtown Kirkland waterfront, docks and summer concerts"},
+  {"name": "Houghton Beach Park", "lat": 47.6636, "lon": -122.2027, "type": "swim", "note": "lifeguarded lake swimming, paddleboard launch"},
+  {"name": "Cross Kirkland Corridor", "lat": 47.6710, "lon": -122.1968, "type": "bike", "note": "5.75mi gravel rail-trail through town, walk or ride"},
+  {"name": "Watershed Park", "lat": 47.6663, "lon": -122.1909, "type": "hike", "note": "quiet forest loops in the middle of the city"},
+  {"name": "O.O. Denny Park", "lat": 47.7104, "lon": -122.2277, "type": "hike", "note": "lakefront picnic lawn and a creekside old-growth loop"},
+  {"name": "Big Finn Hill Park", "lat": 47.7205, "lon": -122.2385, "type": "bike", "note": "220 acres of forest singletrack, connects to Saint Edward"},
+  {"name": "Saint Edward State Park", "lat": 47.7332, "lon": -122.2553, "type": "hike", "note": "old seminary grounds, forest trails down to a wild lakeshore"},
+  {"name": "Bridle Trails State Park", "lat": 47.6519, "lon": -122.1772, "type": "hike", "note": "482 acres of horse-and-hiker forest trails"},
+  {"name": "Carillon Point", "lat": 47.6580, "lon": -122.2075, "type": "waterfront", "note": "marina boardwalk and waterfront dining"},
+  {"name": "Sammamish River Trail", "lat": 47.6754, "lon": -122.1244, "type": "bike", "note": "paved trail north to Woodinville's wineries"},
+  {"name": "Marymoor Park", "lat": 47.6626, "lon": -122.1180, "type": "park", "note": "640 acres: climbing rock, velodrome, off-leash acres, summer shows"},
+  {"name": "Kirkland Urban Market Street", "lat": 47.6785, "lon": -122.2050, "type": "food", "note": "restaurants and coffee a short walk from the waterfront"}
+]

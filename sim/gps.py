@@ -40,8 +40,17 @@ def load_route(name: str) -> list[tuple[float, float]]:
 
 
 def load_pois() -> list[dict]:
-    with (DATA_DIR / "pois.json").open(encoding="utf-8") as f:
-        return json.load(f)
+    """Merge every regional dataset (pois_*.json).
+
+    Region selection is positional, not configured: datasets don't overlap
+    geographically, so the radius filter in nearby_pois() naturally picks
+    the one the van is actually in.
+    """
+    pois: list[dict] = []
+    for path in sorted(DATA_DIR.glob("pois_*.json")):
+        with path.open(encoding="utf-8") as f:
+            pois.extend(json.load(f))
+    return pois
 
 
 def nearby_pois(lat: float, lon: float, radius_mi: float = 10.0,

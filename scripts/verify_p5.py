@@ -93,6 +93,13 @@ def sim_checks() -> None:
           f"{len(pois)} found, nearest: {pois[0]['name']}")
     check("far POIs excluded", all(p["dist_mi"] <= 15 for p in pois))
 
+    kirkland = nearby_pois(47.6840, -122.1965, radius_mi=8, limit=20)
+    check("Kirkland position auto-selects the Kirkland dataset",
+          len(kirkland) >= 5
+          and any(p["name"] == "Saint Edward State Park" for p in kirkland)
+          and not any("Tofino" in p["name"] or "Tacofino" in p["name"] for p in kirkland),
+          f"{len(kirkland)} found, nearest: {kirkland[0]['name'] if kirkland else '-'}")
+
     fixes_lat = [(i * 30, 49.00 + i * 0.001) for i in range(20)]
     fixes_lon = [(i * 30, -125.60) for i in range(20)]
     check("track_miles sums a track", 1.0 < track_miles(fixes_lat, fixes_lon) < 2.0,

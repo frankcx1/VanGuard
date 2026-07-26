@@ -80,6 +80,15 @@ PRESETS: dict[str, Scenario] = {
         start_soc=30.0, start_hour=10.0, ambient_c=17.0,
         weather="cloudy", pv_peak_w=290.0, base_load_w=25.0,
     ),
+    # P5 demo: parked at home in Kirkland, WA (approximate city-center
+    # coords, deliberately not a real address — public repo). Sunny summer
+    # day, solar doing its thing, Eastside recreation in the POI set.
+    "driveway": Scenario(
+        name="driveway", seed=707,
+        start_soc=88.0, start_hour=10.0, ambient_c=22.0,
+        weather="clear", pv_peak_w=290.0, base_load_w=22.0,
+        position=(47.6840, -122.1965),
+    ),
     # P5 demo: driving the Pacific Rim Hwy into Tofino — alternator charging
     # while moving, GPS tracking the route, trip keeper advising on what's
     # nearby. Parks in Tofino when the route ends (~45 min at 32 mph).

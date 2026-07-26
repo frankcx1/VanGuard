@@ -11,7 +11,7 @@
 # numbers (PLAN.md §7).
 
 param(
-    [ValidateSet("sunny_midday", "dusk_low", "overnight_drain", "shore_power", "cloudy_marginal", "road_trip")]
+    [ValidateSet("sunny_midday", "dusk_low", "overnight_drain", "shore_power", "cloudy_marginal", "road_trip", "driveway")]
     [string]$Scenario = "sunny_midday",
     [double]$SeedHours = 0,      # 0 = auto per scenario
     [int]$Port = 8000,
