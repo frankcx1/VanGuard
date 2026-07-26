@@ -3,6 +3,15 @@
 **Audience: Claude Code, running on the Surface Pro for Business 13-inch
 (12th Edition, Intel).** Frank will point you at this file on first run.
 
+## Where you are starting
+
+Frank creates `C:\vibe\vanguard`, runs `claude` from inside it, and points you
+at this file. So on first run **your working directory is empty** — there is no
+repo, no `CLAUDE.md`, nothing. Task 2 fixes that.
+
+The repo is **public**, so cloning needs no credentials. Do not start with
+`gh auth login`; it is interactive and it is not needed until you want to push.
+
 Work through the tasks in order. Each has a command, a success criterion, and a
 failure branch. **Record every result in `BUILD_LOG.md` as you go** — the RAM
 figure and the OpenVINO device list in particular are open questions in
@@ -48,21 +57,47 @@ that complicate Bluetooth access at M1.
 
 ## Task 2 — Land the code and docs
 
-If you are already running inside `C:\vibe\VanGuard`, the clone is done; skip to
-the docs copy.
+Clone **into the current directory** (`C:\vibe\vanguard`), not into a
+subfolder. No authentication required — the repo is public.
 
 ```powershell
-New-Item -ItemType Directory -Force C:\vibe | Out-Null
-cd C:\vibe
-gh repo clone frankcx1/VanGuard          # needs Task 3 auth first if it fails
+cd C:\vibe\vanguard
+git clone https://github.com/frankcx1/VanGuard.git .
+```
+
+If that fails because the directory is not empty (Claude Code may have created
+a `.claude` folder), use the equivalent that tolerates existing files:
+
+```powershell
+git init
+git remote add origin https://github.com/frankcx1/VanGuard.git
+git fetch origin
+git checkout -t origin/main
+```
+
+Then bring the van documentation across:
+
+```powershell
 Copy-Item "$env:OneDrive\Sprinter" C:\vibe\Sprinter -Recurse
 ```
 
 **Success:**
 
 ```powershell
-git -C C:\vibe\VanGuard log --oneline          # 4+ commits, oldest is "M0:"
+git log --oneline                                  # 5+ commits, oldest is "M0:"
+Get-ChildItem                                      # CLAUDE.md, PLAN.md, BUILD_LOG.md, SETUP_PRO.md
 (Get-ChildItem C:\vibe\Sprinter -Recurse -File | Measure-Object).Count   # ~64 files
+```
+
+**Once the clone lands, read `CLAUDE.md` immediately** — it carries the ground
+rules and the three corrections to the original brief. Then continue this
+runbook from the copy now in your working directory.
+
+Path layout this assumes:
+
+```
+C:\vibe\vanguard\      <- the repo (you are here)
+C:\vibe\Sprinter\      <- van docs; CLAUDE.md refers to these as ../Sprinter/
 ```
 
 **Notes:**
@@ -77,33 +112,39 @@ git -C C:\vibe\VanGuard log --oneline          # 4+ commits, oldest is "M0:"
 
 ---
 
-## Task 3 — GitHub auth and identity
+## Task 3 — Git identity, then auth
 
-**INTERACTIVE.** Run in the background and give Frank the code:
+**Set the identity first — this is not optional and is easy to forget.** A
+clone does not carry repo-local config, so without it, commits made here are
+authored under whatever global identity exists and show as unlinked on GitHub:
+
+```powershell
+cd C:\vibe\vanguard
+git config user.email "199670682+frankcx1@users.noreply.github.com"
+git config user.name "Frank Buchholz"
+```
+
+**Success:** `git config user.email` returns the noreply address above.
+
+The noreply address is deliberate — the repo is public and commits must not
+carry a personal email. Do not "helpfully" change it to a real address.
+
+### Auth — only needed to push
+
+**INTERACTIVE. Defer this until you actually have something to push** (Task 6).
+Nothing in Tasks 1–5 needs it.
+
+When the time comes, run it in the **background**, read the one-time code from
+the output file, and paste it into chat for Frank:
 
 ```powershell
 gh auth login --hostname github.com --git-protocol https --web
 ```
 
-Read the one-time code from the background output file and paste it into chat
-for him. The code expires in ~15 minutes; if it lapses, just issue a new one.
+The code expires in ~15 minutes; if it lapses, issue a new one — they are free.
+Do not run this in the foreground; it will hang until it times out.
 
-Then set the repo-local identity — **`gh repo clone` does not carry it**, and
-without it commits made here will be authored under whatever global identity
-exists and will show as unlinked on GitHub:
-
-```powershell
-cd C:\vibe\VanGuard
-git config user.email "199670682+frankcx1@users.noreply.github.com"
-git config user.name "Frank Buchholz"
-```
-
-**Success:**
-
-```powershell
-gh auth status                    # logged in as frankcx1
-git -C C:\vibe\VanGuard config user.email   # the noreply address above
-```
+**Success:** `gh auth status` shows logged in as `frankcx1`.
 
 The noreply address is deliberate — the repo is public and commits must not
 carry a personal email. Do not "helpfully" change it to a real address.
@@ -138,7 +179,7 @@ Expect an Intel AI Boost device with `Status: OK`.
 **This is the one that matters.**
 
 ```powershell
-cd C:\vibe\VanGuard
+cd C:\vibe\vanguard
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install openvino
@@ -160,7 +201,7 @@ independent of it — carry on.
 ## Task 5 — Dependencies
 
 ```powershell
-cd C:\vibe\VanGuard
+cd C:\vibe\vanguard
 .\.venv\Scripts\Activate.ps1
 pip install fastapi uvicorn aiosqlite pyyaml
 ```
@@ -194,8 +235,16 @@ questions 1 and 2 and record the answers. Commit:
 ```powershell
 git add -A
 git commit -m "Record Surface Pro platform specs; close PLAN.md open questions 1-2"
+```
+
+Pushing needs auth — do the deferred `gh auth login` from Task 3 now, then:
+
+```powershell
 git push
 ```
+
+If Frank is away and cannot complete the browser step, **commit anyway and
+carry on**. The work is safe locally and pushes later.
 
 Then **begin P1** — the simulator and storage layer. See `PLAN.md` §7 for the
 physical model and §8 Track P for the sequence. In short:
