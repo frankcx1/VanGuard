@@ -1,162 +1,222 @@
-# Setting up on the Surface Pro
+# Surface Pro setup runbook
 
-First-run instructions for moving this project from the laptop to the Surface
-Pro for Business 13-inch (12th Edition, Intel). Follow in order.
+**Audience: Claude Code, running on the Surface Pro for Business 13-inch
+(12th Edition, Intel).** Frank will point you at this file on first run.
+
+Work through the tasks in order. Each has a command, a success criterion, and a
+failure branch. **Record every result in `BUILD_LOG.md` as you go** — the RAM
+figure and the OpenVINO device list in particular are open questions in
+`PLAN.md` §10 and need to be closed out.
+
+Do not skip verification steps. Do not assume a command worked because it
+printed nothing.
 
 ---
 
-## 1. Put the files in place
+## Interactive commands — read this first
 
-**The repo comes from GitHub, the docs come from OneDrive.**
+Some commands below **require a human at the browser** and will hang forever if
+you run them in the foreground. This exact trap cost an hour on the source
+machine. For these, run in the background, read the one-time code from the
+output file, and **hand the code to Frank in chat**:
+
+- `gh auth login`
+- any `winget install` that prompts for a license agreement
+
+Everything else is safe to run normally.
+
+---
+
+## Task 1 — Prerequisites
+
+```powershell
+python --version
+git --version
+gh --version
+node --version
+```
+
+**Success:** Python ≥ 3.11, git present, gh present.
+
+**On failure:** report what's missing and let Frank install it. If he asks you
+to, use `winget install Python.Python.3.12`, `winget install Git.Git`,
+`winget install GitHub.cli`. Prefer the python.org build over the Microsoft
+Store build — the Store build sandboxes filesystem and device paths in ways
+that complicate Bluetooth access at M1.
+
+---
+
+## Task 2 — Land the code and docs
+
+If you are already running inside `C:\vibe\VanGuard`, the clone is done; skip to
+the docs copy.
 
 ```powershell
 New-Item -ItemType Directory -Force C:\vibe | Out-Null
 cd C:\vibe
-gh auth login                       # once, on this machine
-gh repo clone frankcx1/VanGuard
+gh repo clone frankcx1/VanGuard          # needs Task 3 auth first if it fails
 Copy-Item "$env:OneDrive\Sprinter" C:\vibe\Sprinter -Recurse
 ```
 
-Clone the repo rather than copying it from OneDrive — you get the full history
-and a working remote in one step.
-
-For the docs, **copy them out to a local path; do not work inside the OneDrive
-folder.** OneDrive syncing a live `.git` directory can corrupt it, and Files
-On-Demand can turn files into placeholders mid-operation. OneDrive is the
-transfer medium here, not the working directory.
-
-Paths matter: `CLAUDE.md` and `PLAN.md` refer to the docs as `../Sprinter/`, so
-keeping both under `C:\vibe\` makes those references resolve.
-
-Verify git history survived the trip:
+**Success:**
 
 ```powershell
-git -C C:\vibe\VanGuard log --oneline
+git -C C:\vibe\VanGuard log --oneline          # 4+ commits, oldest is "M0:"
+(Get-ChildItem C:\vibe\Sprinter -Recurse -File | Measure-Object).Count   # ~64 files
 ```
 
-You should see two commits, `M0:` and `Add Track P:`.
-
-**Note:** the four walkthrough `.mp4` files in `Sprinter\Training\` were left on
-the laptop deliberately — 7 GB of video that nothing in VanGuard reads. The
-transcripts came across. Sneakernet the videos later only if you want the Master
-Index Training tab working here.
+**Notes:**
+- The four `.mp4` walkthrough videos in `Sprinter\Training\` were deliberately
+  left on the source laptop — 7 GB that nothing in VanGuard reads. Transcripts
+  came across. Their absence is correct, not a sync failure.
+- If `$env:OneDrive\Sprinter` is missing or files are 0 bytes, OneDrive hasn't
+  finished syncing or is using Files On-Demand placeholders. Tell Frank; don't
+  work around it.
+- **Work from `C:\vibe\`, never from inside the OneDrive folder.** OneDrive
+  syncing a live `.git` directory can corrupt it.
 
 ---
 
-## 2. Prerequisites
+## Task 3 — GitHub auth and identity
+
+**INTERACTIVE.** Run in the background and give Frank the code:
 
 ```powershell
-python --version    # need 3.11+
-git --version
+gh auth login --hostname github.com --git-protocol https --web
 ```
 
-If Python is missing, install 3.12 from python.org (not the Store build — it
-sandboxes paths in ways that complicate Bluetooth and file access).
+Read the one-time code from the background output file and paste it into chat
+for him. The code expires in ~15 minutes; if it lapses, just issue a new one.
+
+Then set the repo-local identity — **`gh repo clone` does not carry it**, and
+without it commits made here will be authored under whatever global identity
+exists and will show as unlinked on GitHub:
+
+```powershell
+cd C:\vibe\VanGuard
+git config user.email "199670682+frankcx1@users.noreply.github.com"
+git config user.name "Frank Buchholz"
+```
+
+**Success:**
+
+```powershell
+gh auth status                    # logged in as frankcx1
+git -C C:\vibe\VanGuard config user.email   # the noreply address above
+```
+
+The noreply address is deliberate — the repo is public and commits must not
+carry a personal email. Do not "helpfully" change it to a real address.
 
 ---
 
-## 3. Answer the two open questions
+## Task 4 — Close the two open unknowns
 
-These are the last unknowns in PLAN.md §10 and they gate the model work.
+These are `PLAN.md` §10 questions 1 and 2. **Record the answers in
+`BUILD_LOG.md` and report them to Frank.**
 
-**RAM SKU** — the device ships in 16 / 32 / 64 GB:
+### 4a. RAM SKU
 
 ```powershell
 Get-CimInstance Win32_ComputerSystem |
   Select-Object @{n='RAM_GB';e={[math]::Round($_.TotalPhysicalMemory/1GB)}}
 ```
 
-**NPU present and driver version:**
+Expect 16, 32, or 64. This determines the model size we can target at P3.
+
+### 4b. NPU present, and driver version
 
 ```powershell
 Get-PnpDevice -FriendlyName "*AI Boost*","*NPU*","*Neural*" |
   Select-Object FriendlyName,Status,DriverVersion
 ```
 
-**Does OpenVINO actually see the NPU?** This is the one that matters — Panther
-Lake (Core Ultra Series 3) is new, and OpenVINO support for a new NPU generation
-lands with a lag.
+Expect an Intel AI Boost device with `Status: OK`.
 
-```powershell
-pip install openvino
-python -c "import openvino as ov; print(ov.__version__); print(ov.Core().available_devices)"
-```
+### 4c. Does OpenVINO actually see the NPU?
 
-You want `NPU` in that list, alongside `CPU` and `GPU`. If it's missing, install
-the latest Intel NPU driver from Intel's site and re-check before concluding
-anything. **This gates P3, not P1** — the simulator and dashboard don't care, so
-don't let a driver problem stall the build.
-
-Record all three answers in `BUILD_LOG.md`.
-
----
-
-## 4. Environment
+**This is the one that matters.**
 
 ```powershell
 cd C:\vibe\VanGuard
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+pip install openvino
+python -c "import openvino as ov; print(ov.__version__); print(ov.Core().available_devices)"
+```
+
+**Success:** `NPU` appears in the device list, alongside `CPU` and `GPU`.
+
+**On failure (NPU missing):** this device is Core Ultra Series 3 (Panther
+Lake), which is new enough that OpenVINO support may lag the hardware. Report
+the OpenVINO version and the device list to Frank and suggest updating the
+Intel NPU driver from Intel's site.
+
+**Do not let this block you.** It gates P3 only. P1 and P2 are entirely
+independent of it — carry on.
+
+---
+
+## Task 5 — Dependencies
+
+```powershell
+cd C:\vibe\VanGuard
+.\.venv\Scripts\Activate.ps1
 pip install fastapi uvicorn aiosqlite pyyaml
 ```
 
-Add per milestone rather than all at once:
+That is everything P1 and P2 need. Install the rest only when the milestone
+arrives, so a broken optional dependency never blocks the critical path:
 
-- **P1–P2** (simulator, storage, dashboard): the four above. Nothing else needed.
-- **P3** (inference): `pip install openvino openvino-genai optimum-intel nncf`
-- **M1–M2** (live BLE): `pip install bleak`
-- Master Index app, if you want it here too: `pip install flask pypdf openpyxl
-  pymupdf rapidocr-onnxruntime`
+| Milestone | Add |
+|---|---|
+| P3 inference | `openvino openvino-genai optimum-intel nncf` |
+| M1–M2 live BLE | `bleak` |
+| Master Index app (optional) | `flask pypdf openpyxl pymupdf rapidocr-onnxruntime` |
 
-Model export needs roughly 30 GB free disk for the download plus INT4
-conversion. Check before starting P3.
-
----
-
-## 5. Start working
-
-Open Claude Code in `C:\vibe\VanGuard`. It will pick up `CLAUDE.md`
-automatically, which carries the project context, the corrections to the brief,
-and the ground rules.
-
-Good opening prompt:
-
-> Read PLAN.md and CLAUDE.md, then start P1: the simulator and storage layer.
-
-**Next milestone is P1** — `SimSource` with coulomb counting, a real LiFePO4
-voltage curve, fridge duty cycling, solar peaking at 200–300W, and the seeded
-scenario presets. No van hardware required. See PLAN.md §7 for the physical
-model and §8 Track P for the sequence.
+P3 model export needs roughly **30 GB free disk** for download plus INT4
+conversion. Check before starting it.
 
 ---
 
-## 6. GitHub
+## Task 6 — Report and begin
 
-The repo is public at **<https://github.com/frankcx1/VanGuard>**, which satisfies
-the brief's requirement for a public commit trail as provenance.
+Post a summary to Frank containing:
 
-Commits are authored under the account's `users.noreply.github.com` address so
-they attribute to the profile without exposing a personal email. That's set
-repo-locally, so anything you commit here inherits it automatically — but it
-does **not** carry to other repos. Check with:
+1. RAM SKU
+2. NPU device status and driver version
+3. OpenVINO version and `available_devices` — **explicitly whether `NPU` is present**
+4. Anything that failed or needed a workaround
 
-```powershell
-git -C C:\vibe\VanGuard config user.email
-```
-
-If you clone fresh on the Pro (§1), the config travels with the clone only if
-you set it again — `gh repo clone` does not copy local config. Re-run:
+Append the same to `BUILD_LOG.md`, then update `PLAN.md` §10 to strike
+questions 1 and 2 and record the answers. Commit:
 
 ```powershell
-git config user.email "199670682+frankcx1@users.noreply.github.com"
-git config user.name "frankcx1"
+git add -A
+git commit -m "Record Surface Pro platform specs; close PLAN.md open questions 1-2"
+git push
 ```
 
-To make this the default everywhere, tick **"Keep my email address private"** in
-<https://github.com/settings/emails>.
+Then **begin P1** — the simulator and storage layer. See `PLAN.md` §7 for the
+physical model and §8 Track P for the sequence. In short:
 
-### 2FA note
+- `SimSource` behind the `TelemetrySource` interface
+- Coulomb counting — SOC integrates net current, never set directly
+- A real flat LiFePO4 voltage curve, not a linear ramp
+- Fridge duty cycling, solar bell curve peaking at 200–300W
+- Seeded, deterministic scenario presets
 
-Access to this account was recovered once via a recovery code after an
-authenticator was lost. Keep a passkey registered as the primary method and the
-current recovery codes somewhere durable — a password manager, not `Downloads`.
+Read `CLAUDE.md` first if you have not already — it carries the ground rules and
+the three corrections to the original brief that must not be re-derived.
+
+---
+
+## If something is genuinely blocked
+
+Do not invent a workaround that changes the architecture. The plan is the
+product of verified hardware research; a blocker usually means the plan needs
+updating, which is Frank's call. Report it, propose options, and wait.
+
+Exception: P1 and P2 depend on nothing external. If you are blocked on hardware,
+drivers, auth, or network, that is a signal to **go build the simulator**, not a
+signal to stop.

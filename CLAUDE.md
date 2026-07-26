@@ -74,8 +74,15 @@ must never be able to misrepresent simulated data as live van data.
 - Track M (live BLE) is gated on M1, which is gated on a BT-2 dongle and van
   access.
 
-Two unknowns still open, both quick to resolve on the Pro — see `SETUP_PRO.md`:
-the RAM SKU, and whether OpenVINO enumerates the NPU.
+**First run on the Surface Pro?** Execute `SETUP_PRO.md` top to bottom before
+anything else. It is a runbook written for you, not for a human: prerequisites,
+clone, git identity, and the two open platform questions (RAM SKU, and whether
+OpenVINO enumerates the NPU), each with a success criterion and a failure
+branch. Record results in `BUILD_LOG.md` as you go.
+
+Note the warning at the top of it about interactive commands — `gh auth login`
+needs a human at a browser and will hang if run in the foreground. Run it in the
+background and hand Frank the one-time code.
 
 ## Working style
 
