@@ -128,7 +128,7 @@ Get **BT-2, not BT-1** — BT-1 is RS232 and will not talk to the DCC50S.
 - Intel Core Ultra Series 3 (Panther Lake), **x86-64** — full OpenVINO support
 - Intel AI Boost NPU, **50 TOPS**
 - Intel Arc (Xe3) integrated GPU
-- LPDDR5x — **RAM SKU UNVERIFIED, 16/32/64GB offered**
+- LPDDR5x — **64 GB** [verified 2026-07-25, `Win32_ComputerSystem`]
 
 Note this is the *Business 13-inch* line, distinct from the consumer Surface
 Pro 12-inch, which is Snapdragon/ARM and would have made OpenVINO's NPU plugin
@@ -484,9 +484,12 @@ gitignored — it will hold BLE MAC addresses.
 
 ## 10. Open questions
 
-1. **RAM SKU** — 16, 32, or 64GB?
-   `Get-CimInstance Win32_ComputerSystem | Select @{n='RAM_GB';e={[math]::Round($_.TotalPhysicalMemory/1GB)}}`
-2. **NPU driver version** and whether OpenVINO enumerates `NPU`.
+1. ~~**RAM SKU** — 16, 32, or 64GB?~~ **Closed 2026-07-25: 64 GB** [verified —
+   `Win32_ComputerSystem` on the Pro]. No RAM constraint on model size at P3.
+2. ~~**NPU driver version** and whether OpenVINO enumerates `NPU`.~~
+   **Closed 2026-07-25:** Intel(R) NPU present, Status OK, driver
+   **32.0.100.4512** (2025-12-08). OpenVINO **2026.2.1** enumerates
+   **`['CPU', 'GPU', 'NPU']`** [verified — run on the Pro]. P3 unblocked.
 3. **Are there any tank level sensors?** Visual check. Determines whether
    `get_tanks` is real or dropped.
 4. **Mount location and 12V USB-C PD feed** for the Pro (brief Q3).

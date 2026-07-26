@@ -51,6 +51,55 @@ Next: order arrives → M1 hardware handshake, in the van, on the Pro.
 
 ---
 
+## 2026-07-25 — Surface Pro setup (SETUP_PRO.md Tasks 1–4, in progress)
+
+Working directory note: the repo landed in `C:\vibe\vangaurd` (folder name has
+a transposed "au" vs the runbook's `C:\vibe\vanguard`). Relative paths
+(`../Sprinter/`) are unaffected; flagged to Frank.
+
+**Task 1 — prerequisites:**
+- git 2.55.0.windows.3 — present
+- Python — **not installed anywhere** (no PATH entry, no `py` launcher, no
+  install under Program Files or LocalAppData; only the Store alias stub)
+- gh — not installed
+- node — not installed
+- winget — available
+- Frank approved installs: `winget install Python.Python.3.12` → Python
+  3.12.10 (python.org build, per runbook — not the Store build), and
+  `GitHub.cli` → gh 2.96.0. Both clean, no license-prompt hang (used
+  `--accept-package-agreements --silent` in the background).
+
+**Task 2 — clone + docs:** clone into `C:\vibe\vangaurd` succeeded (6 commits,
+oldest `M0:`). `C:\vibe\Sprinter` copied from OneDrive — 65 files, matches
+expected ~64. The four Training `.mp4`s absent by design.
+
+**Task 3 — git identity:** repo-local `user.email` set to the noreply address,
+`user.name` Frank Buchholz. Verified. Auth deferred to Task 6 per runbook.
+
+**Task 4a — RAM SKU (PLAN.md §10 Q1): 64 GB.** Top SKU — no model-size
+constraint from RAM at P3.
+
+**Task 4b — NPU:** `Intel(R) NPU` device present, Status **OK**, driver
+**32.0.100.4512** dated 2025-12-08.
+
+**Task 4c — OpenVINO device enumeration (PLAN.md §10 Q2): PASS.**
+OpenVINO **2026.2.1** (`2026.2.1-21919-ede283a88e3-releases/2026/2`),
+`Core().available_devices` = **`['CPU', 'GPU', 'NPU']`**. The NPU is
+enumerated — Panther Lake support is there, no driver update needed. P3 is
+unblocked. The three-way NPU/GPU/CPU benchmark is on.
+
+**Task 5 — dependencies:** venv at `.venv` (Python 3.12.10);
+`fastapi uvicorn aiosqlite pyyaml` installed, all imports verified. P3/M1
+extras deferred per runbook.
+
+**Nothing failed; one workaround:** freshly-installed python/gh aren't on the
+PATH of already-running shells — refreshed PATH from the registry once, and the
+venv's absolute paths make it moot from here on.
+
+Next: P1 — simulator + storage layer (PLAN.md §7, §8 Track P).
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>
