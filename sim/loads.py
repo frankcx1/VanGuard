@@ -49,27 +49,29 @@ class LoadEvent:
 
 
 class Fridge:
-    """Compressor fridge duty-cycling — the sawtooth.
+    """Compressor fridge/freezer duty-cycling — the sawtooth.
 
     Modelled as an on/off timer with ambient-dependent duty and per-cycle
     jitter rather than a thermal model: the observable (power vs time) is the
-    same, and this stays deterministic and cheap.
+    same, and this stays deterministic and cheap. The freezer is the same
+    machine with its own parameters.
     """
 
-    CYCLE_MIN = 24.0          # nominal full cycle period, minutes
-    RUN_W = 52.0              # compressor draw while running
-
-    def __init__(self, rng: random.Random, ambient_c: float):
+    def __init__(self, rng: random.Random, ambient_c: float,
+                 run_w: float = 52.0, cycle_min: float = 24.0,
+                 duty_base: float = 0.30):
         self._rng = rng
-        # ~30% duty at 15°C ambient scaling to ~50% at 35°C.
-        self.duty = min(0.50, max(0.30, 0.30 + (ambient_c - 15.0) * 0.01))
+        self.run_w = run_w
+        self.cycle_min = cycle_min
+        # duty scales with ambient: +1%/°C above 15°C, capped.
+        self.duty = min(0.55, max(duty_base, duty_base + (ambient_c - 15.0) * 0.01))
         self._in_run = False
         self._t_left_s = self._draw_phase_s(run=False) * rng.uniform(0.1, 0.9)
 
     def _draw_phase_s(self, run: bool) -> float:
         jitter = self._rng.uniform(0.85, 1.15)
         share = self.duty if run else (1.0 - self.duty)
-        return self.CYCLE_MIN * 60.0 * share * jitter
+        return self.cycle_min * 60.0 * share * jitter
 
     def step(self, dt_s: float) -> float:
         self._t_left_s -= dt_s
@@ -79,7 +81,7 @@ class Fridge:
         if not self._in_run:
             return 0.0
         # Small compressor wander so the "on" plateau isn't a ruler line.
-        return self.RUN_W + self._rng.uniform(-2.0, 2.0)
+        return self.run_w + self._rng.uniform(-2.0, 2.0)
 
 
 class WaterPump:
@@ -111,23 +113,44 @@ class LoadBank:
     fridge: Fridge | None
     pump: WaterPump | None
     events: list[LoadEvent] = field(default_factory=list)
+    freezer: Fridge | None = None
     last_ac_w: float = 0.0
+    last_fridge_w: float = 0.0
+    last_freezer_w: float = 0.0
     # Human-toggled appliances (P6 demo): name → (watts, is_ac).
     appliances: dict = field(default_factory=dict)
+    # Dedicated 12V smart switches (fridge/freezer have their own; assumed
+    # BT-controllable — PLAN §12.5 hardware path).
+    switches: dict = field(default_factory=lambda: {"fridge": True, "freezer": True})
 
-    def step(self, dt_s: float, sim_h: float, clock_h: float) -> float:
+    def step(self, dt_s: float, sim_h: float, clock_h: float,
+             ac_available: bool = True) -> float:
         w = self.base_w + self.rng.uniform(-0.5, 0.5)
+        self.last_fridge_w = 0.0
+        self.last_freezer_w = 0.0
         if self.fridge is not None:
-            w += self.fridge.step(dt_s)
+            fw = self.fridge.step(dt_s)     # step regardless — the compressor
+            if self.switches.get("fridge", True):   # timer runs; the switch cuts power
+                self.last_fridge_w = fw
+                w += fw
+        if self.freezer is not None:
+            zw = self.freezer.step(dt_s)
+            if self.switches.get("freezer", True):
+                self.last_freezer_w = zw
+                w += zw
         if self.pump is not None:
             w += self.pump.step(dt_s, clock_h)
         self.last_ac_w = 0.0     # AC-side watts through the inverter this step
         for ev in self.events:
+            # Scenario-scripted AC events assume the take manages the
+            # inverter; only interactive appliances are gated on it.
             dc = ev.dc_watts_at(sim_h)
             w += dc
             if ev.ac and dc > 0:
                 self.last_ac_w += ev.watts
         for watts, is_ac in self.appliances.values():
+            if is_ac and not ac_available:
+                continue                    # dead outlets: inverter is off
             w += ac_to_dc_watts(watts) if is_ac else watts
             if is_ac:
                 self.last_ac_w += watts

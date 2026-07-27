@@ -180,8 +180,9 @@ def api_checks() -> None:
         check("fallback provenance labeled",
               "deterministic" in vg["provenance"],
               vg["provenance"])
-        check("fallback cooktop verdict correct (No at dusk_low SOC 38%)",
-              answer.startswith("No") and "19.6%" in answer, answer[:90])
+        check("fallback cooktop verdict correct (No at low dusk_low SOC)",
+              answer.startswith("No") and "below the 20% reserve" in answer,
+              answer[:90])
         check("fallback used real audited tools",
               any(t["tool"] == "estimate_runtime" for t in vg["tool_calls"]))
 

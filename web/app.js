@@ -119,46 +119,112 @@ function setFlowPanel(rd, dv) {
   const invAc = get(rd, "inverter", "ac_out_w") ?? 0;
   const invState = get(rd, "inverter", "state");
   const load = dv?.load_w;
-  const house = load == null ? null : Math.max(0, load - (invAc > 0 ? invDc : 0));
+  const house = load == null ? null : Math.max(0, load - invDc);
   $("f-house").textContent = load == null ? "n/a on shore" : `${house.toFixed(0)} W`;
   $("f-ac").textContent = `${invAc.toFixed(0)} W`;
   $("f-inv-state").textContent =
     ({ 0: "off", 1: "idle", 2: "inverting", 3: "BYPASS" })[invState] ?? "–";
+  setToggle($("inverter-btn"), invState !== 0);
 
   const inW = cs.solar_w + cs.alternator_w;
   $("arrow-in").classList.toggle("active", inW > 10 || states.shore);
   $("arrow-out").classList.toggle("active", (load ?? 0) > 5);
-  if (load != null && net != null) {
+  if (!flowNote && load != null && net != null) {
     $("flow-recon").textContent =
       `${inW} W in − ${load.toFixed(0)} W out ≈ ${net > 0 ? "+" : ""}${net.toFixed(0)} W battery`;
-  } else {
+  } else if (!flowNote) {
     $("flow-recon").textContent = states.shore ? "shore charging · load underivable" : "";
   }
 
-  const cook = rd?.__cooktop_on ?? ((invAc > 1200) ? true : false);
-  $("f-cook").textContent = cook ? "ON · sim" : "off · sim";
-  $("cooktop-btn").classList.toggle("on", cook);
-  $("cooktop-btn").dataset.on = cook ? "1" : "0";
-  $("cooktop-btn").setAttribute("aria-pressed", cook ? "true" : "false");
+  const sw = rd?.switches;
+  const cook = invAc > 1200;
+  $("f-cook").textContent = cook ? "1500 W" : "off";
+  setToggle($("cooktop-btn"), cook);
+  if (sw) {
+    const fOn = sw.fridge_on?.value === 1, zOn = sw.freezer_on?.value === 1;
+    $("f-fridge").textContent = fOn ? `${(sw.fridge_w?.value ?? 0).toFixed(0)} W` : "off";
+    $("f-freezer").textContent = zOn ? `${(sw.freezer_w?.value ?? 0).toFixed(0)} W` : "off";
+    setToggle($("fridge-btn"), fOn);
+    setToggle($("freezer-btn"), zOn);
+  }
+}
+
+function setToggle(btn, on) {
+  if (btn.dataset.pendingUntil && Date.now() < Number(btn.dataset.pendingUntil)) {
+    return;   // optimistic state holds until the next poll confirms it
+  }
+  btn.classList.toggle("on", on);
+  btn.dataset.on = on ? "1" : "0";
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+/* Optimistic toggling: flip the button now, let telemetry confirm within a
+   couple of polls. */
+let flowNote = null;
+
+function optimistic(btn, on) {
+  btn.classList.toggle("on", on);
+  btn.dataset.on = on ? "1" : "0";
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.dataset.pendingUntil = String(Date.now() + 5000);
+  setTimeout(refreshLatest, 2500);
+  setTimeout(refreshLatest, 5200);
+}
+
+function showFlowNote(text, ms = 6000) {
+  flowNote = text;
+  $("flow-recon").textContent = text;
+  setTimeout(() => { flowNote = null; }, ms);
 }
 
 document.querySelectorAll(".flow-node.src[data-src]").forEach(btn =>
   btn.addEventListener("click", async () => {
     const enabled = btn.dataset.on !== "1";
+    optimistic(btn, enabled);
     try {
       await postJson("/api/charge_source", { source: btn.dataset.src, enabled });
       refreshAudit();
-    } catch (e) { $("flow-recon").textContent = String(e.message); }
+    } catch (e) { showFlowNote(String(e.message)); }
   }));
 
 $("cooktop-btn").addEventListener("click", async () => {
   const on = $("cooktop-btn").dataset.on !== "1";
-  if (on && !window.confirm("Simulate turning the cooktop ON (1500 W AC)?")) return;
+  optimistic($("cooktop-btn"), on);
+  if (on && $("inverter-btn").dataset.on !== "1") {
+    // 12V-only van until the inverter runs — the sim switches it on for us.
+    optimistic($("inverter-btn"), true);
+    showFlowNote("inverter was off — switching it on so the cooktop has 110V");
+  }
   try {
     await postJson("/api/appliance", { name: "cooktop", on });
     refreshAudit();
-  } catch (e) { $("flow-recon").textContent = String(e.message); }
+  } catch (e) { showFlowNote(String(e.message)); }
 });
+
+$("inverter-btn").addEventListener("click", async () => {
+  const on = $("inverter-btn").dataset.on !== "1";
+  optimistic($("inverter-btn"), on);
+  if (!on && $("cooktop-btn").dataset.on === "1") {
+    optimistic($("cooktop-btn"), false);
+    showFlowNote("inverter off — the cooktop lost 110V");
+  }
+  try {
+    await postJson("/api/inverter", { on });
+    refreshAudit();
+  } catch (e) { showFlowNote(String(e.message)); }
+});
+
+for (const name of ["fridge", "freezer"]) {
+  $(`${name}-btn`).addEventListener("click", async () => {
+    const btn = $(`${name}-btn`);
+    const on = btn.dataset.on !== "1";
+    optimistic(btn, on);
+    try {
+      await postJson("/api/load_switch", { name, on });
+      refreshAudit();
+    } catch (e) { showFlowNote(String(e.message)); }
+  });
+}
 
 /* ---- climate ---------------------------------------------------------------- */
 

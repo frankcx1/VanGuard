@@ -59,6 +59,15 @@ class ApplianceCommand(BaseModel):
     on: bool
 
 
+class InverterCommand(BaseModel):
+    on: bool
+
+
+class LoadSwitchCommand(BaseModel):
+    name: Literal["fridge", "freezer"]
+    on: bool
+
+
 DEFAULT_ALERT_RULES = {
     "soc_warn_pct": 30.0,
     "soc_crit_pct": 15.0,
@@ -344,6 +353,28 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
         await app.state.store.audit(
             tool="ui_appliance", args_json=json.dumps(payload),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"queued": cmd_id})
+
+    @app.post("/api/inverter")
+    async def inverter(body: InverterCommand):
+        if cfg["source"] != "sim":
+            raise HTTPException(403, "inverter control is a sim-only demo control")
+        payload = {"target": "inverter", **body.model_dump()}
+        cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
+        await app.state.store.audit(
+            tool="ui_inverter", args_json=json.dumps(payload),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"queued": cmd_id})
+
+    @app.post("/api/load_switch")
+    async def load_switch(body: LoadSwitchCommand):
+        if cfg["source"] != "sim":
+            raise HTTPException(403, "load switching is a sim-only demo control")
+        payload = {"target": "load_switch", **body.model_dump()}
+        cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
+        await app.state.store.audit(
+            tool="ui_load_switch", args_json=json.dumps(payload),
             result_hash="-", device="HUMAN", duration_ms=0)
         return stamp({"queued": cmd_id})
 

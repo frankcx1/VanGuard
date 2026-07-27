@@ -121,6 +121,8 @@ def build_model(scn: Scenario) -> tuple[VanModel, random.Random]:
         rng=rng,
         base_w=scn.base_load_w,
         fridge=Fridge(rng, scn.ambient_c) if scn.fridge else None,
+        freezer=Fridge(rng, scn.ambient_c, run_w=40.0, cycle_min=30.0,
+                       duty_base=0.33) if scn.fridge else None,
         pump=WaterPump(rng) if scn.pump else None,
         events=list(scn.events),
     )

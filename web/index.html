@@ -61,10 +61,12 @@
         <div class="fb-label" id="f-net-label">battery</div>
       </div>
       <div class="flow-arrow" id="arrow-out" aria-hidden="true">→</div>
-      <div class="flow-col" aria-label="Loads">
+      <div class="flow-col" aria-label="Loads (click to switch, simulated)">
         <div class="flow-node"><span>🏠 House DC</span><b id="f-house">–</b></div>
-        <div class="flow-node"><span>⚡ AC · <span id="f-inv-state">idle</span></span><b id="f-ac">–</b></div>
-        <button class="flow-node src" id="cooktop-btn" aria-pressed="false">🍳 Cooktop <b id="f-cook">off · sim</b></button>
+        <button class="flow-node src" id="inverter-btn" aria-pressed="false">⚡ Inverter · <span id="f-inv-state">off</span><b id="f-ac">–</b></button>
+        <button class="flow-node src" id="cooktop-btn" aria-pressed="false">🍳 Cooktop<b id="f-cook">off</b></button>
+        <button class="flow-node src" id="fridge-btn" aria-pressed="false">🧊 Fridge<b id="f-fridge">–</b></button>
+        <button class="flow-node src" id="freezer-btn" aria-pressed="false">❄️ Freezer<b id="f-freezer">–</b></button>
       </div>
     </div>
     <div class="spark" data-spark="net"></div>

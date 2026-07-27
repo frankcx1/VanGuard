@@ -146,6 +146,11 @@ class VanModel:
         self.switches: dict[str, bool | None] = {
             "solar": None, "alternator": None, "shore": None}
         self.shore_a_actual = 0.0
+        # The van is 12V-only until the inverter is switched on — no 110V
+        # outlet works without it (or shore bypass). Default off, like the
+        # real thing between uses.
+        self.inverter_on = scenario.shore_charger_a > 0
+        self.note = None      # one-shot message surfaced to the UI
         self.battery = Battery(scenario.start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
@@ -176,7 +181,23 @@ class VanModel:
         self.pv_w = self.solar.power_w(clock_h, dt_s)
         if self.switches["solar"] is False:      # panels disconnected
             self.pv_w = 0.0
-        self.load_w = self.loads.step(dt_s, sim_h, clock_h)
+
+        shore_sw = self.switches["shore"]
+        if shore_sw is None:
+            self._shore_a = self.scn.shore_charger_a
+        else:
+            self._shore_a = (self.scn.shore_charger_a or 45.0) if shore_sw else 0.0
+        shore_active = self._shore_a > 0
+
+        ac_available = self.inverter_on or shore_active
+        self.load_w = self.loads.step(dt_s, sim_h, clock_h,
+                                      ac_available=ac_available)
+        if self.loads.last_ac_w > 0 and not self.inverter_on and not shore_active:
+            # A scenario-scripted AC event implies the take turned the
+            # inverter on — keep the story coherent.
+            self.inverter_on = True
+        if self.inverter_on and not shore_active:
+            self.load_w += 18.0     # inverter idle draw is a real battery load
 
         if self.gps is not None:
             self.gps.step(dt_s)
@@ -202,11 +223,7 @@ class VanModel:
         i_alt = (self.scn.alternator_a or 40.0) if engine_on else 0.0
         i_alt = max(0.0, min(50.0 - i_pv, i_alt))   # DCC50S is a 50A device
         self.alt_w = i_alt * v
-        shore_sw = self.switches["shore"]
-        if shore_sw is None:
-            i_shore = self.scn.shore_charger_a
-        else:                   # plugged in / unplugged by hand
-            i_shore = (self.scn.shore_charger_a or 45.0) if shore_sw else 0.0
+        i_shore = self._shore_a
         self.shore_a_actual = i_shore
         i_charge_avail = i_pv + i_alt + i_shore
 
@@ -235,9 +252,31 @@ class VanModel:
             if name not in known:
                 return False
             if cmd.get("on"):
+                if not (self.inverter_on or self.shore_a_actual > 0):
+                    # Dead outlets: the van is 12V-only until the inverter
+                    # runs. Do what a person would — switch it on first.
+                    self.inverter_on = True
+                    self.note = ("inverter was off - switched it on so the "
+                                 f"{name} has 110V")
                 self.loads.appliances[name] = known[name]
             else:
                 self.loads.appliances.pop(name, None)
+            return True
+        if cmd.get("target") == "inverter":
+            self.inverter_on = bool(cmd.get("on"))
+            if not self.inverter_on:
+                # Outlets just died — AC appliances stop with them.
+                dropped = [n for n, (_, ac) in self.loads.appliances.items() if ac]
+                for n in dropped:
+                    self.loads.appliances.pop(n, None)
+                if dropped:
+                    self.note = f"inverter off - {', '.join(dropped)} lost 110V"
+            return True
+        if cmd.get("target") == "load_switch":
+            name = cmd.get("name")
+            if name not in ("fridge", "freezer"):
+                return False
+            self.loads.switches[name] = bool(cmd.get("on"))
             return True
         if cmd.get("target") == "hvac" and self.hvac is not None:
             mode_map = {"off": 0.0, "heat": 1.0, "cool": 2.0}
@@ -368,17 +407,28 @@ class SimSource(TelemetrySource):
         if "inverter" not in self._offline:  # inverter round (CAN-only device,
             # unreadable in v1 — simulated in demo mode; see PLAN §12.5)
             ac_w = m.loads.last_ac_w
-            if m.scn.shore_charger_a > 0:
+            if m.shore_a_actual > 0:
                 state = 3.0            # BYPASS on shore power [verified van doc]
+            elif not m.inverter_on:
+                state = 0.0            # off: the van is 12V-only right now
             elif ac_w > 5.0:
                 state = 2.0            # inverting
             else:
                 state = 1.0            # on, idle
-            dc_in = (ac_w / INVERTER_EFFICIENCY if ac_w > 0 else 0.0) + 18.0
+            idle = 18.0 if (m.inverter_on and m.shore_a_actual == 0) else 0.0
+            dc_in = (ac_w / INVERTER_EFFICIENCY if ac_w > 0 else 0.0) + idle
             add("inverter", "state", state, 0.0, 1.0)
             add("inverter", "ac_out_w", ac_w, 0.5 if ac_w > 0 else 0.0, 1.0)
-            add("inverter", "dc_in_w", dc_in, 0.5, 1.0)
+            add("inverter", "dc_in_w", dc_in, 0.5 if dc_in > 0 else 0.0, 1.0)
             add("inverter", "load_pct", ac_w / 3000.0 * 100.0, 0.0, 1.0)
+        # Dedicated smart switches (BT-controllable in the hardware plan).
+        add("switches", "inverter_on", 1.0 if m.inverter_on else 0.0, 0.0, 1.0)
+        add("switches", "fridge_on",
+            1.0 if m.loads.switches.get("fridge", True) else 0.0, 0.0, 1.0)
+        add("switches", "freezer_on",
+            1.0 if m.loads.switches.get("freezer", True) else 0.0, 0.0, 1.0)
+        add("switches", "fridge_w", m.loads.last_fridge_w, 0.0, 1.0)
+        add("switches", "freezer_w", m.loads.last_freezer_w, 0.0, 1.0)
         if m.gps is not None and "gps" not in self._offline:     # GPS round
             add("gps", "lat", m.gps.lat, 0.00002, 0.00001)   # ~2m fix jitter
             add("gps", "lon", m.gps.lon, 0.00002, 0.00001)

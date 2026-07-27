@@ -66,7 +66,7 @@ $cfg = Join-Path $demoDir "devices_$Scenario.yaml"
 $dbYaml = ($db -replace '\\', '/')
 @"
 source: sim
-poll_interval_s: 5
+poll_interval_s: 2
 db_path: $dbYaml
 sim:
   scenario: $Scenario

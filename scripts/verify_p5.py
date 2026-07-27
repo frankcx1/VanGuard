@@ -135,8 +135,45 @@ def sim_checks() -> None:
 
     print("== inverter (simulated; real unit is CAN-only) ==")
     inv_idle = {s.metric: s.value for s in ems_back if s.source == "inverter"}
-    check("inverter idle when no AC load",
-          inv_idle.get("state") == 1.0 and inv_idle.get("ac_out_w") == 0.0)
+    check("inverter OFF by default (van is 12V-only until switched on)",
+          inv_idle.get("state") == 0.0 and inv_idle.get("ac_out_w") == 0.0)
+
+    inv_src = SimSource(get_scenario("driveway"))
+    inv_src.advance(60)
+    ok_cook = inv_src.apply_command({"target": "appliance", "name": "cooktop",
+                                     "on": True})
+    inv_src.advance(10)
+    e1 = {s.metric: s.value for s in inv_src.emit(1_770_000_070)
+          if s.source == "inverter"}
+    check("cooktop while inverter off → inverter auto-starts, inverting",
+          ok_cook and e1.get("state") == 2.0 and e1.get("ac_out_w", 0) > 1400,
+          f"state={e1.get('state')}, ac={e1.get('ac_out_w')}W")
+    inv_src.apply_command({"target": "inverter", "on": False})
+    inv_src.advance(10)
+    e2 = {s.metric: s.value for s in inv_src.emit(1_770_000_080)
+          if s.source == "inverter"}
+    check("inverter off kills the outlets (cooktop drops with it)",
+          e2.get("state") == 0.0 and e2.get("ac_out_w") == 0.0)
+
+    print("== fridge / freezer smart switches ==")
+    sw_src = SimSource(get_scenario("driveway"))
+    sw_src.advance(3600)
+    sw1 = {s.metric: s.value for s in sw_src.emit(1_770_003_600)
+           if s.source == "switches"}
+    check("switch states + live compressor watts emitted",
+          sw1.get("fridge_on") == 1.0 and sw1.get("freezer_on") == 1.0
+          and "fridge_w" in sw1 and "freezer_w" in sw1)
+    ok_f = sw_src.apply_command({"target": "load_switch", "name": "fridge",
+                                 "on": False})
+    sw_src.advance(30)
+    sw2 = {s.metric: s.value for s in sw_src.emit(1_770_003_630)
+           if s.source == "switches"}
+    check("fridge switch off → 0W from the fridge",
+          ok_f and sw2.get("fridge_on") == 0.0 and sw2.get("fridge_w") == 0.0)
+    check("freezer unaffected by fridge switch", sw2.get("freezer_on") == 1.0)
+    check("unknown load switch refused",
+          sw_src.apply_command({"target": "load_switch", "name": "tv",
+                                "on": False}) is False)
 
     sp = SimSource(get_scenario("shore_power"))
     sp.advance(60)
