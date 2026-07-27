@@ -211,6 +211,23 @@ class ToolRunner:
             }
         return out
 
+    async def tool_get_chassis(self) -> dict:
+        rd = await self.store.latest()
+        ch = {m: v for m, (ts, v) in rd.get("chassis", {}).items()}
+        if not ch:
+            return {"error": "no chassis adapter - front-of-van data not monitored"}
+        return {
+            "engine_running": ch.get("engine_running") == 1.0,
+            "speed_mph": _r(ch.get("speed_mph")),
+            "chassis_battery_v": _r(ch.get("chassis_v"), 2),
+            "fuel_pct": _r(ch.get("fuel_pct"), 0),
+            "def_pct": _r(ch.get("def_pct"), 0),
+            "coolant_f": _f(ch.get("coolant_c")),
+            "odometer_mi": _r(ch.get("odometer_mi"), 0),
+            "dtc_count": _r(ch.get("dtc_count"), 0),
+            "note": "read-only chassis telemetry",
+        }
+
     async def tool_get_guardian_log(self, limit: int = 8) -> dict:
         """The autonomy decision trail — lets the model answer "why did you
         do that?" from the record instead of confabulating a reason."""
@@ -298,6 +315,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {"type": "function", "function": {
         "name": "get_network",
         "description": "Connectivity: uplink (offline/5G/wifi/starlink), signal, latency, throughput, Starlink dish state/power.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "get_chassis",
+        "description": "Read-only Mercedes chassis: engine state, speed, chassis battery V, fuel %, DEF %, coolant F, odometer, DTC count.",
         "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {
         "name": "get_guardian_log",

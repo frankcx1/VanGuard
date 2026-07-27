@@ -42,6 +42,14 @@ class Scenario:
     hvac_setpoint_c: float = 21.0
     inverter_on: bool = False      # initial inverter switch state
     network_mode: str = "off"      # off | cell | wifi | starlink (initial)
+    # P9 chassis sim (read-only domain; real adapter is OBD-II, see
+    # CHASSIS_RESEARCH.md):
+    fuel_pct: float = 68.0
+    def_pct: float = 74.0
+    odometer_mi: float = 41_250.0
+    dtc_count: float = 0.0
+    charging_fault: bool = False   # engine runs but no energy reaches the
+                                   # house system — the fusion-finding demo
 
 
 PRESETS: dict[str, Scenario] = {
@@ -99,6 +107,26 @@ PRESETS: dict[str, Scenario] = {
         name="overnight_guardian", seed=808,
         start_soc=31.0, start_hour=23.0, ambient_c=16.0,
         weather="none", pv_peak_w=0.0, base_load_w=30.0,
+        inverter_on=True, network_mode="starlink",
+    ),
+    # P9 fusion demo: chassis says the engine is healthy and running, yet no
+    # alternator energy reaches the house system. Neither subsystem alone
+    # can explain it — the cross-system finding can.
+    "charging_path_fault": Scenario(
+        name="charging_path_fault", seed=909,
+        start_soc=55.0, start_hour=14.0, ambient_c=21.0,
+        weather="cloudy", pv_peak_w=290.0, base_load_w=35.0,
+        alternator_a=40.0, route="tofino", drive_mph=32.0,
+        charging_fault=True,
+    ),
+    # P9 fusion demo: arrive at camp — driving → parked, ignition off, but
+    # Starlink and the idle inverter are still burning travel-mode watts
+    # into a marginal evening reserve.
+    "arrival_cleanup": Scenario(
+        name="arrival_cleanup", seed=910,
+        start_soc=44.0, start_hour=19.0, ambient_c=18.0,
+        weather="none", pv_peak_w=0.0, base_load_w=30.0,
+        alternator_a=40.0, route="tofino", drive_mph=32.0,
         inverter_on=True, network_mode="starlink",
     ),
     # P5 demo: driving the Pacific Rim Hwy into Tofino — alternator charging

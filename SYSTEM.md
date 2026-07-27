@@ -207,6 +207,25 @@ reserve cases), watchdog, fallback, provenance, runtime honesty. Model and
 voice end-to-end stages are explicit and skippable; everything else needs
 no LLM.
 
+## 9.5 Guardian & whole-van fusion (P8/P9)
+
+**Guardian** is a deterministic policy engine — the model is never in this
+loop. Autonomy ladder (Observe/Advise/Ask/Protect/Emergency, user-selected,
+sim-only actions), per-action permission classes with cooldowns, episodes
+`detect → verify → decide → act → confirm → resolved` logged to
+`guardian_events` and executed through the same audited command queue
+(device=GUARDIAN). Low sensor confidence withholds all action. The model
+answers "why did you do that?" from `get_guardian_log`, never from memory.
+Full contract: `GUARDIAN_POLICY.md`.
+
+**Chassis domain** (simulated; real adapter = read-only OBD-II, see
+`CHASSIS_RESEARCH.md`) adds engine state, chassis voltage, fuel/DEF,
+coolant, odometer, DTCs — enabling **fusion findings** neither subsystem
+can produce alone: the charging-path anomaly (engine healthy, house
+starved, nothing blamed), arrival cleanup (park transition → Camp policy +
+travel-load shed), and a departure-readiness checklist where unknowns are
+NOT MONITORED, never PASS.
+
 ## 10. Road to real hardware
 
 `PLAN.md` §12.5 maps every demo feature to its hardware path. Highlights:

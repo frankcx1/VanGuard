@@ -65,6 +65,12 @@ ACTIONS = {
         "command": {"target": "hvac", "mode": "off"},
         "cooldown_s": 600,
     },
+    "set_mode_camp": {
+        "label": "Switch operating mode to Camp",
+        "permission": "auto",              # app policy, not hardware
+        "command": None,                   # executed via meta, not the queue
+        "cooldown_s": 1800,
+    },
 }
 
 
@@ -85,6 +91,7 @@ class Guardian:
         self.active = None       # current episode dict
         self.last_action_ts = {}  # action_id → ts (cooldowns)
         self.last_withheld_ts = 0.0
+        self._was_moving = False  # arrival-transition tracking (P9)
 
     # -- helpers ----------------------------------------------------------------
 
@@ -119,12 +126,12 @@ class Guardian:
 
     async def _execute(self, action_id) -> None:
         cmd = ACTIONS[action_id]["command"]
-        payload = {"source_of_command": "guardian", **cmd}
-        await self.app.state.store.enqueue_command(
-            json.dumps({k: v for k, v in payload.items()
-                        if k != "source_of_command"}))
+        if action_id == "set_mode_camp":
+            await self.app.state.store.set_meta("operating_mode", "camp")
+        elif cmd is not None:
+            await self.app.state.store.enqueue_command(json.dumps(cmd))
         await self.app.state.store.audit(
-            tool=f"guardian_{action_id}", args_json=json.dumps(cmd),
+            tool=f"guardian_{action_id}", args_json=json.dumps(cmd or {}),
             result_hash="-", device="GUARDIAN", duration_ms=0)
         self.last_action_ts[action_id] = time.time()
 
@@ -167,19 +174,78 @@ class Guardian:
         }
 
     def detect_alternator_gap(self, readings) -> dict | None:
-        speed = _get(readings, "gps", "speed_mph") or 0.0
+        """Cross-system charging-path anomaly (P9 fusion).
+
+        With chassis telemetry we can say something neither subsystem can
+        alone: the Mercedes side is demonstrably healthy (engine running,
+        chassis bus at charging voltage) yet no alternator energy reaches
+        the house battery. Without chassis data, falls back to GPS motion.
+        No component is blamed and nothing is 'repaired' — restraint is
+        the correct autonomous behaviour here.
+        """
         alt = _get(readings, "dcc50s", "alt_power_w") or 0.0
-        if speed < 5 or alt > 25:
+        soc = _get(readings, "shunt", "soc_pct") or 0.0
+        engine = _get(readings, "chassis", "engine_running")
+        chassis_v = _get(readings, "chassis", "chassis_v")
+        speed = _get(readings, "gps", "speed_mph") or 0.0
+        if alt > 25 or soc > 95:      # charging fine, or battery full enough
+            return None                # to legitimately suppress charge
+        if engine is not None:
+            if engine != 1.0:
+                return None
+            chassis_txt = (f"engine running, chassis bus at "
+                           f"{chassis_v:.1f}V" if chassis_v else "engine running")
+        elif speed > 5:
+            chassis_txt = f"vehicle moving at {speed:.0f}mph"
+        else:
             return None
         return {
-            "id": "alt-gap",
+            "id": "charging-path",
             "severity": "advisory",
-            "title": "No alternator charge while moving",
-            "detail": "probable charging-path issue; monitoring conservatively "
-                      "- no autonomous repair is possible or attempted",
+            "title": "Charging-path anomaly",
+            "detail": (f"Mercedes electrical state appears active ({chassis_txt}) "
+                       "but no alternator energy is reaching the house system. "
+                       "Possible: DC-DC path, BT-2/DCC50S input, or sensor "
+                       "disagreement - no single component can be blamed yet. "
+                       "Recommend inspecting the charging path; monitoring "
+                       "conservatively"),
             "actions": [],                 # intelligent restraint
             "proposals": [],
-            "metrics": {"speed_mph": speed, "alt_w": alt},
+            "metrics": {"alt_w": alt, "engine_running": engine,
+                        "chassis_v": chassis_v, "speed_mph": speed},
+        }
+
+    def detect_arrival(self, readings) -> dict | None:
+        """Arrival-state cleanup (P9 fusion): moving → parked with the
+        ignition off, while travel-mode loads keep burning watts."""
+        engine = _get(readings, "chassis", "engine_running")
+        speed = _get(readings, "chassis", "speed_mph")
+        if engine is None or speed is None:
+            return None
+        moving_now = engine == 1.0 or speed > 5
+        was_moving = self._was_moving
+        self._was_moving = moving_now
+        if moving_now or not was_moving:
+            return None                    # fires exactly on the transition
+        travel_loads = []
+        if _get(readings, "network", "mode") == 3.0:
+            travel_loads.append("suspend_starlink")
+        if (_get(readings, "inverter", "state") == 1.0
+                and (_get(readings, "inverter", "ac_out_w") or 0) < 5):
+            travel_loads.append("inverter_standby_off")
+        return {
+            "id": "arrival",
+            "severity": "advisory",
+            "title": "Arrived - travel loads still active",
+            "detail": ("vehicle parked and ignition off; "
+                       + (f"{len(travel_loads)} travel-mode load(s) still "
+                          "drawing power" if travel_loads else
+                          "loads already minimal")
+                       + "; switching policy to Camp and recalculating the "
+                         "overnight reserve"),
+            "actions": ["set_mode_camp"] + travel_loads,
+            "proposals": [],
+            "metrics": {"travel_loads": len(travel_loads)},
         }
 
     def data_confidence_low(self, readings, now) -> str | None:
@@ -230,6 +296,7 @@ class Guardian:
             self.detect_voltage_sag(readings),
             self.detect_reserve_risk(readings, outlook),
             self.detect_alternator_gap(readings),
+            self.detect_arrival(readings),
         ) if r]
 
         if low and risks:
@@ -245,7 +312,9 @@ class Guardian:
             self.pending[rid] = self.pending.get(rid, 0) + 1
             interlock = any(ACTIONS[a]["permission"] == "interlock"
                             for a in risk["actions"])
-            needed = 1 if interlock else 2      # hysteresis, except interlocks
+            # Hysteresis, except interlocks and one-shot transitions (an
+            # arrival event doesn't repeat, so it can't wait a second look).
+            needed = 1 if (interlock or rid == "arrival") else 2
             if self.pending[rid] < needed:
                 continue
             if self.active and self.active["risk_id"] == rid:

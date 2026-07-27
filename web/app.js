@@ -108,8 +108,27 @@ async function refreshLatest() {
   setClimateTile(rd);
   setInverterTile(rd);
   setNetworkTile(rd);
+  setChassisBlock(rd);
   fillTable(rd, data.server_ts);
   updateDiagSummary(rd, data.server_ts);
+}
+
+function setChassisBlock(rd) {
+  const ch = rd?.chassis;
+  if (!ch) {
+    $("chassis-line1").textContent = "no chassis adapter · not monitored";
+    $("chassis-line2").textContent = "";
+    return;
+  }
+  const eng = ch.engine_running?.value === 1;
+  const spd = ch.speed_mph?.value ?? 0;
+  $("chassis-line1").textContent =
+    `${eng ? (spd > 2 ? `driving · ${spd.toFixed(0)} mph` : "engine running · parked")
+           : "parked · ignition off"} · ${(ch.chassis_v?.value ?? 0).toFixed(2)} V chassis`;
+  $("chassis-line2").textContent =
+    `fuel ${(ch.fuel_pct?.value ?? 0).toFixed(0)}% · DEF ${(ch.def_pct?.value ?? 0).toFixed(0)}% · ` +
+    `coolant ${cToF(ch.coolant_c?.value ?? 0).toFixed(0)}°F · ` +
+    `DTC ${(ch.dtc_count?.value ?? 0).toFixed(0)}`;
 }
 
 /* ---- network -------------------------------------------------------------- */
@@ -713,7 +732,7 @@ function fillTable(rd, serverTs) {
   tbody.innerHTML = rows.join("");
   tbody.querySelectorAll("td.dev").forEach(td =>
     td.addEventListener("click", () => {
-      if (!["shunt", "dcc50s", "hvac", "gps", "inverter"].includes(td.dataset.source)) return;
+      if (!["shunt", "dcc50s", "hvac", "gps", "inverter", "chassis"].includes(td.dataset.source)) return;
       const offline = Number(td.dataset.age) > 45;
       postJson("/api/sensor", { source: td.dataset.source, offline: !offline })
         .then(refreshAudit).catch(() => {});

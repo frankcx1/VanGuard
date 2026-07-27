@@ -105,8 +105,8 @@ def parsing_checks() -> None:
     check("malformed JSON flagged, not fatal",
           parse_tool_calls('<tool_call>{"name": broken}</tool_call>')[0]["name"] == "_malformed")
     check("plain text → no calls", parse_tool_calls("SOC is 42%.") == [])
-    check("11 tool schemas, all read-only names",
-          len(TOOL_SCHEMAS) == 11
+    check("12 tool schemas, all read-only names",
+          len(TOOL_SCHEMAS) == 12
           and all(f["function"]["name"].startswith(("get_", "estimate_"))
                   for f in TOOL_SCHEMAS))
 

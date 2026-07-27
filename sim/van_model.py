@@ -153,6 +153,13 @@ class VanModel:
         self.note = None      # one-shot message surfaced to the UI
         from sim.network import NetworkSim
         self.network = NetworkSim(scenario.seed)
+        # Chassis domain (P9): read-only by definition — the real adapter is
+        # an OBD-II dongle (CHASSIS_RESEARCH.md). Simulated here so fusion
+        # findings and Guardian logic work before hardware exists.
+        self.engine_running = False
+        self.fuel_pct = scenario.fuel_pct
+        self.def_pct = scenario.def_pct
+        self.coolant_c = scenario.ambient_c
         self.battery = Battery(scenario.start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
@@ -228,7 +235,22 @@ class VanModel:
                 self.gps is None or self.scn.route is None or self.gps.moving)
         else:                   # human override: engine idling / shut off
             engine_on = alt_sw
-        i_alt = (self.scn.alternator_a or 40.0) if engine_on else 0.0
+        self.engine_running = engine_on
+        if self.scn.charging_fault:
+            # The Mercedes side is healthy; the DC-DC path to the house
+            # battery is not. Neither subsystem alone can explain this —
+            # that's the point of the fusion finding.
+            i_alt = 0.0
+        else:
+            i_alt = (self.scn.alternator_a or 40.0) if engine_on else 0.0
+
+        # Chassis thermals/consumables move only while the engine runs.
+        if engine_on:
+            self.fuel_pct = max(0.0, self.fuel_pct - 7.0 * dt_s / 3600.0)
+            self.def_pct = max(0.0, self.def_pct - 0.15 * dt_s / 3600.0)
+            self.coolant_c += (90.0 - self.coolant_c) * min(1.0, dt_s / 300.0)
+        else:
+            self.coolant_c += (self.ambient_c() - self.coolant_c) * min(1.0, dt_s / 1800.0)
         i_alt = max(0.0, min(50.0 - i_pv, i_alt))   # DCC50S is a 50A device
         self.alt_w = i_alt * v
         i_shore = self._shore_a
@@ -451,6 +473,21 @@ class SimSource(TelemetrySource):
             1.0 if m.loads.switches.get("freezer", True) else 0.0, 0.0, 1.0)
         add("switches", "fridge_w", m.loads.last_fridge_w, 0.0, 1.0)
         add("switches", "freezer_w", m.loads.last_freezer_w, 0.0, 1.0)
+        if "chassis" not in self._offline:   # chassis round (read-only; real
+            # adapter is OBD-II — see CHASSIS_RESEARCH.md)
+            eng = m.engine_running
+            add("chassis", "engine_running", 1.0 if eng else 0.0, 0.0, 1.0)
+            add("chassis", "ignition", 1.0 if eng else 0.0, 0.0, 1.0)
+            add("chassis", "speed_mph",
+                m.gps.speed_mph if m.gps else 0.0, 0.15 if eng else 0.0, 0.1)
+            add("chassis", "chassis_v",
+                14.1 if eng else 12.65, 0.03, 0.01)
+            add("chassis", "fuel_pct", m.fuel_pct, 0.0, 0.5)
+            add("chassis", "def_pct", m.def_pct, 0.0, 0.5)
+            add("chassis", "coolant_c", m.coolant_c, 0.3, 1.0)
+            add("chassis", "odometer_mi",
+                m.scn.odometer_mi + (m.gps.trip_mi if m.gps else 0.0), 0.0, 0.1)
+            add("chassis", "dtc_count", m.scn.dtc_count, 0.0, 1.0)
         if m.gps is not None and "gps" not in self._offline:     # GPS round
             add("gps", "lat", m.gps.lat, 0.00002, 0.00001)   # ~2m fix jitter
             add("gps", "lon", m.gps.lon, 0.00002, 0.00001)
@@ -465,7 +502,8 @@ class SimSource(TelemetrySource):
             # the last reading ages, and staleness handling does the rest —
             # real behaviour, not painted-on state.
             source = cmd.get("source")
-            if source not in ("shunt", "dcc50s", "hvac", "gps", "inverter"):
+            if source not in ("shunt", "dcc50s", "hvac", "gps", "inverter",
+                              "chassis"):
                 return False
             if cmd.get("offline"):
                 self._offline.add(source)

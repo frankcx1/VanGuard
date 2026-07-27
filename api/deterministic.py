@@ -15,6 +15,85 @@ WATTS_RE = re.compile(r"(\d{3,4})\s*w", re.IGNORECASE)
 MINUTES_RE = re.compile(r"(\d{1,3})\s*(?:min|minutes)", re.IGNORECASE)
 COOKTOP_DEFAULT_W = 1700.0     # DC-side draw of the 1500W AC cooktop
 
+DEPARTURE_KEYWORDS = ("ready to depart", "ready to leave", "ready to go",
+                      "departure", "depart", "before we leave",
+                      "before we drive", "leave camp")
+
+
+def is_departure_question(q: str) -> bool:
+    return any(k in q.lower() for k in DEPARTURE_KEYWORDS)
+
+
+def departure_checklist(readings: dict) -> list[dict]:
+    """Deterministic pre-departure check (P9). Unknown ≠ PASS: anything we
+    can't see is reported as not monitored, never assumed fine."""
+    import time as _time
+    now = int(_time.time())
+
+    def val(source, metric):
+        m = readings.get(source, {}).get(metric)
+        if not m or now - m[0] > 60:
+            return None
+        return m[1]
+
+    rows = []
+
+    def row(item, status, note):
+        rows.append({"item": item, "status": status, "note": note})
+
+    soc = val("shunt", "soc_pct")
+    if soc is None:
+        row("House battery", "not monitored", "no fresh reading")
+    else:
+        row("House battery", "ok" if soc >= 50 else "attention",
+            f"{soc:.0f}% SOC")
+    shore = val("charge_ctl", "shore_on")
+    row("Shore power", "not monitored" if shore is None else
+        ("attention" if shore == 1.0 else "ok"),
+        "unplug before driving" if shore == 1.0 else "disconnected")
+    inv = val("inverter", "state")
+    row("Inverter", "not monitored" if inv is None else
+        ("ok" if inv in (0.0, None) else "attention"),
+        "off" if inv == 0.0 else "still on - switch off for the drive")
+    for name, label in (("fridge_on", "Fridge"), ("freezer_on", "Freezer")):
+        v = val("switches", name)
+        row(label, "not monitored" if v is None else
+            ("ok" if v == 1.0 else "attention"),
+            "running" if v == 1.0 else "switched OFF - food risk on a long drive")
+    hv = val("hvac", "mode")
+    row("Climate", "not monitored" if hv is None else
+        ("ok" if hv == 0.0 else "attention"),
+        "off" if hv == 0.0 else "still running")
+    fuel = val("chassis", "fuel_pct")
+    row("Fuel", "not monitored" if fuel is None else
+        ("ok" if fuel >= 25 else "attention"),
+        f"{fuel:.0f}%" if fuel is not None else "chassis data unavailable")
+    d = val("chassis", "def_pct")
+    row("DEF", "not monitored" if d is None else
+        ("ok" if d >= 15 else "attention"),
+        f"{d:.0f}%" if d is not None else "chassis data unavailable")
+    dtc = val("chassis", "dtc_count")
+    row("Diagnostic codes", "not monitored" if dtc is None else
+        ("ok" if dtc == 0 else "attention"),
+        "none" if dtc == 0 else
+        (f"{dtc:.0f} active DTC(s)" if dtc is not None else "unavailable"))
+    stale = sum(1 for per in readings.values()
+                for ts, _ in per.values() if now - ts > 60)
+    row("Sensor freshness", "ok" if stale == 0 else "attention",
+        "all fresh" if stale == 0 else f"{stale} stale readings")
+    return rows
+
+
+def format_checklist(rows: list[dict]) -> str:
+    mark = {"ok": "OK", "attention": "ATTENTION", "not monitored": "NOT MONITORED"}
+    lines = ["Departure readiness (deterministic check):"]
+    for r in rows:
+        lines.append(f"- {r['item']}: {mark[r['status']]} - {r['note']}")
+    n_att = sum(1 for r in rows if r["status"] == "attention")
+    lines.append("Verdict: " + ("ready to depart." if n_att == 0 else
+                                f"{n_att} item(s) need attention before leaving."))
+    return "\n".join(lines)
+
 
 async def respond(question: str, runner: ToolRunner,
                   insight: dict, outlook: dict) -> tuple[str, list[dict]]:

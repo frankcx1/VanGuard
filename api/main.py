@@ -45,7 +45,7 @@ class HvacCommand(BaseModel):
 
 
 class SensorCommand(BaseModel):
-    source: Literal["shunt", "dcc50s", "hvac", "gps", "inverter"]
+    source: Literal["shunt", "dcc50s", "hvac", "gps", "inverter", "chassis"]
     offline: bool
 
 

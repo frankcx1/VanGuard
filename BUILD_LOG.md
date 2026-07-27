@@ -493,6 +493,47 @@ observe-level restraint). Full regression green.
 
 ---
 
+## 2026-07-27 — P9: Whole-van fusion — chassis domain + cross-system findings
+
+Frank dropped SUGGEST.md (a formal vNext proposal; Track G was essentially
+P8 already). Implemented the high-value selections; deliberately skipped
+adapter manifests, integrator profiles, and trend analysis (need real
+trips/customers).
+
+- **Chassis domain (simulated, read-only by definition)**: engine_running,
+  ignition, speed, chassis bus voltage (14.1V running / 12.65V rest), fuel
+  %, DEF %, coolant, odometer, DTC count — fuel burns and coolant warms
+  only while the engine runs. Real adapter path documented in
+  `CHASSIS_RESEARCH.md`: OBD-II BLE dongle + python-OBD, read-only,
+  standard PIDs first; fuel/DEF flagged [UNVERIFIED] until tested on this
+  van; Mercedes Fleet API noted and rejected (cloud). Compact CHASSIS
+  block in the Trip tile; `get_chassis` tool + snapshot (12 tools now).
+- **Fusion findings** (the point of the whole exercise):
+  - *Charging-path anomaly*: chassis says engine running + 14.1V bus, house
+    says 0W alternator input, battery not full → advisory naming the
+    evidence, blaming nothing, acting on nothing. Suppressed when SOC>95
+    (charge legitimately tapered). `charging_path_fault` scenario: DTC=0 —
+    Mercedes sees nothing wrong; only the fused view does.
+  - *Arrival cleanup*: one-shot moving→parked+ignition-off transition with
+    travel loads still burning → mode→Camp + shed Starlink/idle inverter,
+    reserve recalculated. Live-verified: parks 36 min into the route.
+- **Departure readiness**: deterministic checklist (battery, shore,
+  inverter, fridge/freezer, climate, fuel, DEF, DTCs, sensor freshness) —
+  routed server-side like runtime questions, never through the model;
+  **unknowns render as NOT MONITORED, never PASS** (chassis offline →
+  fuel/DEF/DTC not-monitored, verified). "ready to depart?" chat chip.
+- `GUARDIAN_POLICY.md` documents the ladder, action classes, and loop.
+- Field lesson while testing live: the Tofino route finishes in 36 min,
+  not the estimated ~65 — the arrival demo seeded 1.0h had the van parked
+  before Guardian ever saw motion, so the transition never fired. Seed
+  corrected to 0.5h; an end-to-end drive→park guardian test now pins it.
+
+Verification: `verify_p9.py` **23/23**; full regression green (p1/p2/p4/
+p5/p6/p8). Reserve-protection also observed completing its full loop live
+(122W→81W, sunrise 5%→20%, then *resolved* when the risk cleared).
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>

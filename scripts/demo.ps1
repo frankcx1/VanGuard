@@ -11,7 +11,7 @@
 # numbers (PLAN.md §7).
 
 param(
-    [ValidateSet("sunny_midday", "dusk_low", "overnight_drain", "shore_power", "cloudy_marginal", "road_trip", "driveway", "overnight_guardian")]
+    [ValidateSet("sunny_midday", "dusk_low", "overnight_drain", "shore_power", "cloudy_marginal", "road_trip", "driveway", "overnight_guardian", "charging_path_fault", "arrival_cleanup")]
     [string]$Scenario = "sunny_midday",
     [double]$SeedHours = 0,      # 0 = auto per scenario
     [int]$Port = 8000,
@@ -47,6 +47,9 @@ if ($SeedHours -le 0) {
         "shore_power"     { 4 }
         "road_trip"       { 0.25 }   # still mid-route on the Pacific Rim Hwy
         "overnight_guardian" { 1 }   # 31% just after midnight, drain running
+        "charging_path_fault" { 0.25 } # mid-drive, engine fine, house starved
+        "arrival_cleanup"    { 0.5 }  # route parks at ~36 min → arrives ~6
+                                      # minutes into the live session
         default           { 24 }
     }
 }
