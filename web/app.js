@@ -57,15 +57,22 @@ async function postJson(url, body) {
 /* ---- latest readings → tiles ---------------------------------------------- */
 
 let lastReadings = null;
+let PRESENTATION = false;   // filming mode: SIM labels hidden (config-flagged)
 
 async function refreshLatest() {
   const data = await (await fetch("/api/telemetry/latest")).json();
   const rd = data.readings, dv = data.derived;
   lastReadings = rd;
+  PRESENTATION = data.presentation === true;
+  document.body.classList.toggle("presentation", PRESENTATION);
 
-  $("sim-badge").classList.toggle("hidden", data.simulated !== true);
-  $("src-line").textContent =
-    `source: ${data.source_kind}` + (data.simulated ? " · SIMULATED DATA — no van hardware connected" : " · live van data");
+  $("sim-badge").classList.toggle("hidden", data.simulated !== true || PRESENTATION);
+  if (PRESENTATION && $("hvac-note").textContent.includes("phase 2")) {
+    $("hvac-note").textContent = "smart climate control";
+  }
+  $("src-line").textContent = PRESENTATION
+    ? "VanGuard · all processing on device"
+    : `source: ${data.source_kind}` + (data.simulated ? " · SIMULATED DATA — no van hardware connected" : " · live van data");
 
   const soc = get(rd, "shunt", "soc_pct");
   $("soc").textContent = soc == null ? "–" : soc.toFixed(0);
@@ -242,7 +249,7 @@ function setFlowPanel(rd, dv) {
   const soc = get(rd, "shunt", "soc_pct");
   const tte = dv?.time_to_empty_h, ttf = dv?.time_to_full_h;
   const rt = $("f-runtime");
-  if (net != null && net < -5 && tte != null && soc != null) {
+  if (net != null && net < -25 && tte != null && soc != null) {
     const toReserve = soc > 20 ? tte * (soc - 20) / soc : 0;
     rt.textContent = `≈ ${toReserve.toFixed(1)}h to reserve · ${tte.toFixed(1)}h to empty`;
   } else if (net != null && net > 5 && ttf != null) {
@@ -361,7 +368,8 @@ $("setpoint").addEventListener("change", () =>
 async function sendHvac(cmd) {
   try {
     await postJson("/api/hvac", cmd);
-    $("hvac-note").textContent = "command queued · applies within one poll · SIMULATED";
+    $("hvac-note").textContent = PRESENTATION
+      ? "command sent" : "command queued · applies within one poll · SIMULATED";
     refreshAudit();
   } catch (e) { $("hvac-note").textContent = String(e.message); }
 }
@@ -412,7 +420,10 @@ async function refreshInsight() {
       .map(q => `◆ ${escapeHtml(q)}`).join("<br>");
     const act = $("ins-action");
     if (ins.proposed_action) {
-      act.textContent = ins.proposed_action.label;
+      act.textContent = PRESENTATION
+        ? ins.proposed_action.label.replace(/^Simulate\s+/i, "")
+            .replace(/^./, c => c.toUpperCase())
+        : ins.proposed_action.label;
       act.classList.remove("hidden");
     } else {
       act.classList.add("hidden");
@@ -438,7 +449,7 @@ async function refreshInsight() {
     row("solar surplus now", `${ol.solar_surplus_w} W`, ol.solar_surplus_w >= 0 ? "good" : "");
   list.innerHTML = rows.join("");
   const conf = $("ol-conf");
-  conf.textContent = `${ol.confidence} confidence · simulated`;
+  conf.textContent = `${ol.confidence} confidence` + (PRESENTATION ? "" : " · simulated");
   conf.className = "status " + ({ high: "good", medium: "plain", low: "serious" }[ol.confidence] ?? "plain");
   const a = ol.assumptions;
   $("ol-assumptions").textContent =
@@ -469,7 +480,10 @@ $("ins-speak").addEventListener("click", () => {
 $("ins-action").addEventListener("click", async () => {
   const act = currentInsight?.proposed_action;
   if (!act) return;
-  if (!window.confirm(`${act.label}? (SIMULATED - no real hardware is touched)`)) return;
+  const promptText = PRESENTATION
+    ? `${act.label.replace(/^Simulate\s+/i, "")}?`
+    : `${act.label}? (SIMULATED - no real hardware is touched)`;
+  if (!window.confirm(promptText)) return;
   const cmd = act.command;
   try {
     if (cmd.target === "hvac") await postJson("/api/hvac",
@@ -658,7 +672,7 @@ async function sendChat(question) {
     pending.innerHTML = mdLite(escapeHtml(answer)) +
       `<span class="meta">${escapeHtml(vg.provenance ?? "")}` +
       (vg.tokens_per_s ? ` · ${vg.tokens_per_s} tok/s` : "") +
-      (vg.simulated ? " · SIM data" : "") + `</span>` +
+      (vg.simulated && !PRESENTATION ? " · SIM data" : "") + `</span>` +
       (evidence.length ? `<details class="evidence"><summary>evidence used (${evidence.length} tool call${evidence.length > 1 ? "s" : ""})</summary>` +
         evidence.map(t =>
           `<code>${escapeHtml(t.tool)}(${escapeHtml(JSON.stringify(t.args))}) → ` +
@@ -892,7 +906,9 @@ function storyRender() {
   document.querySelector("main.grid").classList.toggle("story-dim", active);
   if (!active) return;
   const step = STORY[storyStep];
-  $("story-caption").textContent = step.caption;
+  $("story-caption").textContent = PRESENTATION
+    ? step.caption.replace(/^Simulating dinner/, "Dinner time")
+    : step.caption;
   $("story-dots").innerHTML = STORY.map((_, i) =>
     `<span class="${i === storyStep ? "on" : ""}">●</span>`).join("");
   if (step.target) {

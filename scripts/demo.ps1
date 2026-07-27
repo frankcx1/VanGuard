@@ -16,7 +16,10 @@ param(
     [double]$SeedHours = 0,      # 0 = auto per scenario
     [int]$Port = 8000,
     [switch]$Stop,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$NPU,                # serve the LLM on the NPU (real; ~90s compile)
+    [switch]$Presentation        # filming mode: hides SIM labels in the UI.
+                                 # Data-layer stamps stay; see BUILD_LOG.
 )
 
 $repo = Split-Path -Parent $PSScriptRoot
@@ -64,17 +67,20 @@ if ($LASTEXITCODE -ne 0) { Write-Error "seeding failed"; exit 1 }
 
 $cfg = Join-Path $demoDir "devices_$Scenario.yaml"
 $dbYaml = ($db -replace '\\', '/')
+$order = if ($NPU) { "[NPU, GPU, CPU]" } else { "[GPU, NPU, CPU]" }
+$pres = if ($Presentation) { "true" } else { "false" }
 @"
 source: sim
 poll_interval_s: 2
 db_path: $dbYaml
+presentation: $pres
 sim:
   scenario: $Scenario
   speed: 1.0
   warmup_h: $SeedHours
 inference:
   model_dir: ov_qwen3_4b_instruct_2507_int4_npu
-  device_order: [GPU, NPU, CPU]
+  device_order: $order
 "@ | Out-File -Encoding utf8 $cfg
 
 Write-Host "== starting poller + api (port $Port) =="
@@ -102,6 +108,15 @@ try {
     Write-Host "model warm."
 } catch {
     Write-Warning "pre-warm failed (model not exported?): $_"
+}
+
+if ($Presentation) {
+    # Filming default: bring the Starlink uplink online for the shot.
+    try {
+        Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/network" -Method Post `
+            -ContentType "application/json" -Body '{"mode":"starlink"}' | Out-Null
+        Write-Host "presentation mode: SIM labels hidden, Starlink coming online (~45s dish boot)."
+    } catch {}
 }
 
 Write-Host ""

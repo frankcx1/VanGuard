@@ -195,8 +195,12 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     app.include_router(chat_router)
 
     def stamp(payload: dict) -> dict:
+        # The data-layer truth is never suppressed: simulated stays stamped
+        # on every payload even when the UI runs in presentation mode
+        # (a deliberate, config-flagged choice for filming — see BUILD_LOG).
         payload["simulated"] = simulated
         payload["source_kind"] = cfg["source"]
+        payload["presentation"] = bool(cfg.get("presentation", False))
         payload["server_ts"] = int(time.time())
         return payload
 
