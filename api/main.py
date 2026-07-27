@@ -98,6 +98,18 @@ class ModeCommand(BaseModel):
     mode: Literal["camp", "sleep", "drive", "storage", "emergency"]
 
 
+def cfg_for_mode(cfg: dict, mode: str) -> dict:
+    """Merge an operating mode's policy into a config copy."""
+    policy = OPERATING_MODES.get(mode, {})
+    merged = dict(cfg)
+    merged["power"] = {**(cfg.get("power") or {}),
+                       "reserve_pct": policy.get("reserve_pct", 20.0)}
+    merged["alerts"] = {**(cfg.get("alerts") or {}),
+                        **{k: v for k, v in policy.items()
+                           if k.endswith(("_pct", "_h")) and k != "reserve_pct"}}
+    return merged
+
+
 def evaluate_alerts(readings: dict, overrides: dict, stale: bool,
                     outlook: dict | None = None) -> list[dict]:
     """Severities: critical > warning > advisory > data-quality > info."""
@@ -179,9 +191,16 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.store = await Store(cfg.get("db_path", "vanguard.db")).open()
+        wd_task = None
+        interval = float((cfg.get("watchdog") or {}).get("interval_min", 5))
+        if interval > 0:
+            from api.watchdog import watchdog_loop
+            wd_task = asyncio.create_task(watchdog_loop(app, interval))
         try:
             yield
         finally:
+            if wd_task is not None:
+                wd_task.cancel()
             await app.state.store.close()
 
     app = FastAPI(title="VanGuard", lifespan=lifespan)
@@ -256,20 +275,10 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     async def _mode() -> str:
         return (await app.state.store.get_meta("operating_mode")) or "camp"
 
-    def _cfg_for_mode(mode: str) -> dict:
-        policy = OPERATING_MODES.get(mode, {})
-        merged = dict(cfg)
-        merged["power"] = {**(cfg.get("power") or {}),
-                           "reserve_pct": policy.get("reserve_pct", 20.0)}
-        merged["alerts"] = {**(cfg.get("alerts") or {}),
-                            **{k: v for k, v in policy.items()
-                               if k.endswith(("_pct", "_h")) and k != "reserve_pct"}}
-        return merged
-
     async def _outlook(horizon_h: float | None = None) -> tuple[dict, dict, dict]:
         readings = await app.state.store.latest()
         pv_hist = await app.state.store.history("dcc50s", "pv_power_w", 24 * 3600)
-        mcfg = _cfg_for_mode(await _mode())
+        mcfg = cfg_for_mode(cfg, await _mode())
         return readings, compute_outlook(readings, pv_hist, mcfg, horizon_h), mcfg
 
     @app.get("/api/mode")
@@ -298,6 +307,24 @@ def create_app(cfg: dict | None = None) -> FastAPI:
                       "outlook": out,
                       "mode": await _mode()})
 
+    @app.get("/api/watchdog")
+    async def watchdog_status():
+        patrols = await app.state.store.recent_patrols(limit=12)
+        return stamp({
+            "last": patrols[0] if patrols else None,
+            "history": patrols,
+            "interval_min": float((cfg.get("watchdog") or {}).get("interval_min", 5)),
+            "count_today": await app.state.store.patrol_count_today(),
+        })
+
+    @app.post("/api/watchdog/run")
+    async def watchdog_run():
+        from api.watchdog import run_patrol
+        await app.state.store.audit(
+            tool="ui_watchdog_run", args_json="{}", result_hash="-",
+            device="HUMAN", duration_ms=0)
+        return stamp({"patrol": await run_patrol(app)})
+
     @app.get("/api/runtime")
     async def runtime():
         # Honest runtime status: only what the loaded pipelines report.
@@ -306,8 +333,13 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         model_dir = Path(__file__).resolve().parent.parent / cfg.get(
             "inference", {}).get("model_dir", "ov_qwen3_4b_instruct_2507_int4_npu")
         last = getattr(app.state, "last_gen", None)
+        base = model_dir.name.removeprefix("ov_").removesuffix("_npu")
+        quant = "INT4" if "_int4" in base else ""
+        pretty = base.replace("_int4", "").replace("_", "-").title()
         return stamp({
             "model_dir": model_dir.name,
+            "model_label": (pretty + (f" · {quant}" if quant else "")),
+            "model_short": pretty.split("-Instruct")[0],
             "model_exported": (model_dir / "openvino_model.xml").exists(),
             "loaded": engine is not None,
             "device_requested": (cfg.get("inference", {})

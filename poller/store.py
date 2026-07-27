@@ -49,6 +49,16 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS patrols (   -- watchdog check reports (P7)
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  status TEXT NOT NULL,                -- nominal | attention | warning | critical
+  summary TEXT NOT NULL,
+  findings_json TEXT NOT NULL,
+  source TEXT NOT NULL,                -- 'rules' or 'rules + local model (DEV)'
+  duration_ms INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS commands (  -- human control commands (P5 demo);
   id INTEGER PRIMARY KEY,              -- the poller applies them to the source
   ts INTEGER NOT NULL,
@@ -156,6 +166,28 @@ class Store:
                 (source, metric, since),
             )
         return [(int(t), float(v)) for t, v in await cur.fetchall()]
+
+    async def add_patrol(self, status: str, summary: str, findings_json: str,
+                         source: str, duration_ms: int) -> None:
+        await self._db.execute(
+            "INSERT INTO patrols (ts, status, summary, findings_json, source, "
+            "duration_ms) VALUES (?, ?, ?, ?, ?, ?)",
+            (int(time.time()), status, summary, findings_json, source, duration_ms))
+        await self._db.commit()
+
+    async def recent_patrols(self, limit: int = 20) -> list[dict]:
+        cur = await self._db.execute(
+            "SELECT ts, status, summary, source, duration_ms FROM patrols "
+            "ORDER BY id DESC LIMIT ?", (limit,))
+        return [{"ts": int(t), "status": st, "summary": s, "source": src,
+                 "duration_ms": d} for t, st, s, src, d in await cur.fetchall()]
+
+    async def patrol_count_today(self, now: int | None = None) -> int:
+        now = int(now if now is not None else time.time())
+        midnight = now - (now % 86400)
+        cur = await self._db.execute(
+            "SELECT COUNT(*) FROM patrols WHERE ts >= ?", (midnight,))
+        return int((await cur.fetchone())[0])
 
     async def get_meta(self, key: str) -> str | None:
         cur = await self._db.execute("SELECT value FROM meta WHERE key=?", (key,))

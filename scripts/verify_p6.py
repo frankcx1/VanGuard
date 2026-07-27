@@ -215,6 +215,21 @@ def api_checks() -> None:
         check("insight endpoint serves rules + outlook + mode",
               "summary" in ins["insight"] and "mode" in ins)
 
+        wr = c.post("/api/watchdog/run")
+        check("manual watchdog patrol runs", wr.status_code == 200)
+        patrol = wr.json()["patrol"]
+        check("patrol renders a deterministic verdict + report (no model)",
+              patrol["status"] in ("nominal", "attention", "warning", "critical")
+              and len(patrol["summary"]) > 20 and patrol["source"] == "rules",
+              f"{patrol['status']}: {patrol['summary'][:60]}")
+        wd = c.get("/api/watchdog").json()
+        check("watchdog endpoint: last patrol + today count",
+              wd["last"] is not None and wd["count_today"] >= 1)
+        audit_wd = c.get("/api/audit").json()["entries"]
+        check("patrol audited as WATCHDOG",
+              any(e["tool"] == "watchdog_patrol" and e["device"] == "WATCHDOG"
+                  for e in audit_wd))
+
         c.post("/api/mode", json={"mode": "storage"})
         ol = c.get("/api/outlook").json()
         check("storage mode raises reserve policy to 50%",
@@ -223,6 +238,14 @@ def api_checks() -> None:
         ol2 = c.get("/api/outlook").json()
         check("camp mode restores 20% reserve",
               ol2["assumptions"]["reserve_pct"] == 20.0)
+
+    app_default = create_app({"source": "sim", "db_path": str(db)})
+    with TestClient(app_default) as c:
+        rt2 = c.get("/api/runtime").json()
+        check("runtime reports a human-readable model label",
+              "Qwen3" in rt2.get("model_label", "")
+              and "INT4" in rt2.get("model_label", ""),
+              rt2.get("model_label"))
 
 
 def appliance_checks() -> None:

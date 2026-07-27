@@ -507,10 +507,10 @@ async function refreshRuntime() {
   const r = await (await fetch("/api/runtime")).json();
   const badge = $("ai-badge");
   if (r.loaded) {
-    badge.textContent = `LOCAL AI: ${r.device_confirmed}`;
+    badge.textContent = `LOCAL AI: ${r.device_confirmed} · ${r.model_short}`;
     badge.className = "badge rail good";
   } else if (r.model_exported) {
-    badge.textContent = "LOCAL AI: READY (loads on first ask)";
+    badge.textContent = `LOCAL AI: READY · ${r.model_short}`;
     badge.className = "badge rail";
   } else {
     badge.textContent = "DETERMINISTIC MODE — NO MODEL";
@@ -518,7 +518,7 @@ async function refreshRuntime() {
   }
   const lg = r.last_generation;
   $("runtime-detail").innerHTML = [
-    `model: <b>${escapeHtml(r.model_dir)}</b> · exported: <b>${r.model_exported}</b>`,
+    `model: <b>${escapeHtml(r.model_label)}</b> (<code>${escapeHtml(r.model_dir)}</code>) · exported: <b>${r.model_exported}</b>`,
     `runtime: OpenVINO GenAI · endpoint: <b>${escapeHtml(r.endpoint)}</b>`,
     `device requested: <b>${escapeHtml((r.device_requested ?? []).join(" → "))}</b>`,
     `device confirmed: <b>${r.device_confirmed ?? "not loaded yet"}</b>` +
@@ -531,6 +531,36 @@ async function refreshRuntime() {
     ? `AI on ${r.device_confirmed} (measured)` : (r.model_exported
       ? "AI ready · not loaded yet" : "deterministic mode");
 }
+
+/* ---- watchdog --------------------------------------------------------------- */
+
+const WD_SEV = { nominal: "info", attention: "advisory", warning: "warning",
+                 critical: "critical" };
+
+async function refreshWatchdog() {
+  const w = await (await fetch("/api/watchdog")).json();
+  if (!w.last) {
+    $("wd-meta").textContent =
+      `watchdog armed · first check shortly · every ${w.interval_min} min`;
+    return;
+  }
+  const t = new Date(w.last.ts * 1000).toLocaleTimeString(
+    [], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  $("wd-status").textContent = w.last.status.toUpperCase();
+  $("wd-status").className = `sev ${WD_SEV[w.last.status] ?? "info"}`;
+  $("wd-meta").textContent =
+    `last check ${t} · every ${w.interval_min} min · ${w.count_today} today · ${w.last.source}`;
+  $("wd-summary").textContent = w.last.summary;
+}
+
+$("wd-run").addEventListener("click", async () => {
+  $("wd-meta").textContent = "patrolling…";
+  try {
+    await postJson("/api/watchdog/run", {});
+    await refreshWatchdog();
+    refreshAudit();
+  } catch (e) { $("wd-meta").textContent = String(e.message); }
+});
 
 $("mode-sel").addEventListener("change", async () => {
   try {
@@ -959,6 +989,8 @@ refreshSparks();
 refreshAudit();
 refreshTrip();
 refreshRuntime();
+refreshWatchdog();
+setInterval(refreshWatchdog, 30_000);
 setInterval(tick, REFRESH_LATEST_MS);
 setInterval(refreshInsight, REFRESH_INSIGHT_MS);
 setInterval(refreshSparks, REFRESH_HISTORY_MS);

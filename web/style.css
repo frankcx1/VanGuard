@@ -224,6 +224,15 @@ button.flow-node { cursor: pointer; }
 .insight-tile p { font-size: 14px; line-height: 1.5; color: var(--ink); }
 .insight-tile .reco { color: var(--st-warn); font-weight: 600; }
 .insight-tile .quality { color: var(--st-quality); font-size: 12.5px; }
+.watchdog { border-top: 1px solid var(--grid); padding-top: 6px; margin-top: 4px; }
+.wd-line { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.wd-line button {
+  margin-left: auto;
+  background: transparent; border: 1px solid var(--baseline); border-radius: 6px;
+  color: var(--ink-2); padding: 3px 9px; cursor: pointer; font-size: 11.5px;
+}
+.wd-summary { font-size: 12.5px; color: var(--ink-2); font-style: italic; margin-top: 4px; }
+
 .insight-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
 .insight-actions button {
   background: transparent; border: 1px solid var(--baseline); border-radius: 7px;

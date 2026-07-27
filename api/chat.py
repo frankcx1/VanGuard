@@ -87,7 +87,10 @@ _engine_lock = asyncio.Lock()
 
 async def get_engine(request: Request):
     """Lazy singleton: load once, on first use, off the event loop."""
-    app = request.app
+    return await get_engine_for_app(request.app)
+
+
+async def get_engine_for_app(app):
     async with _engine_lock:
         if getattr(app.state, "engine", None) is None:
             from inference.serve import InferenceEngine

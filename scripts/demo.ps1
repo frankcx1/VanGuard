@@ -81,6 +81,9 @@ sim:
 inference:
   model_dir: ov_qwen3_4b_instruct_2507_int4_npu
   device_order: $order
+watchdog:
+  interval_min: 5
+  use_model: true
 "@ | Out-File -Encoding utf8 $cfg
 
 Write-Host "== starting poller + api (port $Port) =="

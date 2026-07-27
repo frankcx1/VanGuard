@@ -425,6 +425,33 @@ mode policies; appliance command). Full fast regression green (P1/P2/P4/P5).
 
 ---
 
+## 2026-07-27 — P7: Watchdog patrols + presentation polish
+
+- **Watchdog** (`api/watchdog.py`): the API process patrols on a schedule
+  (config `watchdog.interval_min`, demo 5 min). Each patrol pulls state
+  through the audited read-only tools (device=WATCHDOG in the audit),
+  renders the verdict deterministically (insight + outlook + alerts →
+  nominal/attention/warning/critical), then the local model writes the
+  1-2 sentence report FROM those findings — same language-layer-only
+  discipline as chat; no model → deterministic text stands. Logged to a
+  `patrols` table; surfaced in the Insight panel with status chip, last
+  check time, cadence, count today, source, and a "Check now" button.
+  First NPU patrol: 2.7s, report quoted the findings' numbers verbatim.
+- Rail badge now names the model: "LOCAL AI: NPU · Qwen3-4B" (label
+  derived from the loaded model dir, shown only for the runtime-confirmed
+  device).
+- Earlier same day: presentation mode (-Presentation) for filming — UI
+  sim labels hidden, data-layer `simulated` stamps preserved; -NPU switch
+  serves for real on the NPU; outlook source-persistence fix (alternator/
+  shore project forward — no false 0%-by-sunrise while the engine runs);
+  battery-box live runtime readout; A/C toggle; network panel with
+  5G/Wi-Fi/Starlink Mini (real gRPC-shaped telemetry + real 12V draw).
+
+Verification: p6 grew to 40 checks (patrol verdict/report/audit, model
+label, persistence forecasts); full fast regression green.
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>

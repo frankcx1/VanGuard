@@ -28,6 +28,10 @@ power:                 # deterministic calc service (api/outlook.py)
   reserve_pct: 20      # operating modes may override (sleep 30, storage 50…)
   inverter_efficiency: 0.88
 
+watchdog:              # autonomous patrols (P7): rules verdict + model-written
+  interval_min: 5      # report, logged to the patrols table. 0 disables.
+  use_model: true
+
 inference:             # P3+ — the model is a config value, not an architecture
   model_dir: ov_qwen3_4b_instruct_2507_int4_npu
   device_order: [GPU, NPU, CPU]   # first that loads wins; serving device is
