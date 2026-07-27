@@ -35,6 +35,16 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g,
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+/* The model sprinkles Markdown despite instructions; render the safe subset
+   (input is already HTML-escaped, so this can't inject anything). */
+function mdLite(escaped) {
+  return escaped
+    .replace(/^#{1,4}\s+(.+)$/gm, "<b>$1</b>")
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/\*([^*\n]+)\*/g, "<i>$1</i>")
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>");
+}
 async function postJson(url, body) {
   const r = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -619,7 +629,7 @@ async function sendChat(question) {
     const vg = data.vanguard ?? {};
     const evidence = (vg.tool_calls ?? []).filter(t => !t.auto);
     pending.classList.remove("pending");
-    pending.innerHTML = escapeHtml(answer) +
+    pending.innerHTML = mdLite(escapeHtml(answer)) +
       `<span class="meta">${escapeHtml(vg.provenance ?? "")}` +
       (vg.tokens_per_s ? ` · ${vg.tokens_per_s} tok/s` : "") +
       (vg.simulated ? " · SIM data" : "") + `</span>` +
