@@ -191,7 +191,8 @@ class VanModel:
 
         ac_available = self.inverter_on or shore_active
         self.load_w = self.loads.step(dt_s, sim_h, clock_h,
-                                      ac_available=ac_available)
+                                      ac_available=ac_available,
+                                      ac_to_battery=not shore_active)
         if self.loads.last_ac_w > 0 and not self.inverter_on and not shore_active:
             # A scenario-scripted AC event implies the take turned the
             # inverter on — keep the story coherent.
@@ -416,7 +417,9 @@ class SimSource(TelemetrySource):
             else:
                 state = 1.0            # on, idle
             idle = 18.0 if (m.inverter_on and m.shore_a_actual == 0) else 0.0
-            dc_in = (ac_w / INVERTER_EFFICIENCY if ac_w > 0 else 0.0) + idle
+            # In BYPASS the outlets are fed from shore — zero DC drawn.
+            dc_in = ((ac_w / INVERTER_EFFICIENCY
+                      if (ac_w > 0 and m.shore_a_actual == 0) else 0.0) + idle)
             add("inverter", "state", state, 0.0, 1.0)
             add("inverter", "ac_out_w", ac_w, 0.5 if ac_w > 0 else 0.0, 1.0)
             add("inverter", "dc_in_w", dc_in, 0.5 if dc_in > 0 else 0.0, 1.0)

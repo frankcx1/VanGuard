@@ -124,7 +124,7 @@ class LoadBank:
     switches: dict = field(default_factory=lambda: {"fridge": True, "freezer": True})
 
     def step(self, dt_s: float, sim_h: float, clock_h: float,
-             ac_available: bool = True) -> float:
+             ac_available: bool = True, ac_to_battery: bool = True) -> float:
         w = self.base_w + self.rng.uniform(-0.5, 0.5)
         self.last_fridge_w = 0.0
         self.last_freezer_w = 0.0
@@ -145,13 +145,21 @@ class LoadBank:
             # Scenario-scripted AC events assume the take manages the
             # inverter; only interactive appliances are gated on it.
             dc = ev.dc_watts_at(sim_h)
-            w += dc
-            if ev.ac and dc > 0:
+            if dc <= 0:
+                continue
+            if ev.ac:
                 self.last_ac_w += ev.watts
+                if ac_to_battery:       # in BYPASS the AC comes from shore
+                    w += dc
+            else:
+                w += dc
         for watts, is_ac in self.appliances.values():
-            if is_ac and not ac_available:
-                continue                    # dead outlets: inverter is off
-            w += ac_to_dc_watts(watts) if is_ac else watts
             if is_ac:
+                if not ac_available:
+                    continue            # dead outlets: inverter is off
                 self.last_ac_w += watts
+                if ac_to_battery:       # BYPASS: shore feeds the outlets
+                    w += ac_to_dc_watts(watts)
+            else:
+                w += watts
         return max(0.0, w)

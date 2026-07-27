@@ -155,6 +155,21 @@ def sim_checks() -> None:
     check("inverter off kills the outlets (cooktop drops with it)",
           e2.get("state") == 0.0 and e2.get("ac_out_w") == 0.0)
 
+    bp = SimSource(get_scenario("driveway"))
+    bp.advance(60)
+    bp.apply_command({"target": "charge_source", "source": "shore", "enabled": True})
+    bp.apply_command({"target": "appliance", "name": "cooktop", "on": True})
+    bp.advance(60)
+    e3 = {s.metric: s.value for s in bp.emit(1_770_000_140)
+          if s.source == "inverter"}
+    check("BYPASS: cooktop runs from shore, zero DC drawn from battery",
+          e3.get("state") == 3.0 and e3.get("ac_out_w", 0) > 1400
+          and e3.get("dc_in_w") == 0.0,
+          f"ac={e3.get('ac_out_w')}W dc_in={e3.get('dc_in_w')}W")
+    check("BYPASS: battery charges despite the cooktop",
+          bp.model.battery.i_net_a > 5,
+          f"net={bp.model.battery.i_net_a:.1f}A")
+
     print("== fridge / freezer smart switches ==")
     sw_src = SimSource(get_scenario("driveway"))
     sw_src.advance(3600)
