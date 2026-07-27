@@ -139,6 +139,13 @@ class VanModel:
         self.gps = gps
         self.hvac_w = 0.0
         self.alt_w = 0.0
+        # Manual charge-source switches (P5 demo): None = scenario/auto
+        # behaviour, True/False = human override. Semantically these are the
+        # van's real physical actions — connect panels, run the engine,
+        # plug into shore — applied to the simulated van.
+        self.switches: dict[str, bool | None] = {
+            "solar": None, "alternator": None, "shore": None}
+        self.shore_a_actual = 0.0
         self.battery = Battery(scenario.start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
@@ -167,6 +174,8 @@ class VanModel:
             self.daily_yield_wh = 0.0
 
         self.pv_w = self.solar.power_w(clock_h, dt_s)
+        if self.switches["solar"] is False:      # panels disconnected
+            self.pv_w = 0.0
         self.load_w = self.loads.step(dt_s, sim_h, clock_h)
 
         if self.gps is not None:
@@ -184,12 +193,21 @@ class VanModel:
         # (invisible to the DCC50S — that blindness is modelled, not a
         # bug: it's what breaks load derivation on shore, PLAN §3).
         i_pv = self.pv_w * CHARGE_EFFICIENCY / v
-        engine_on = self.scn.alternator_a > 0 and (
-            self.gps is None or self.scn.route is None or self.gps.moving)
-        i_alt = self.scn.alternator_a if engine_on else 0.0
+        alt_sw = self.switches["alternator"]
+        if alt_sw is None:      # auto: engine runs while driving the route
+            engine_on = self.scn.alternator_a > 0 and (
+                self.gps is None or self.scn.route is None or self.gps.moving)
+        else:                   # human override: engine idling / shut off
+            engine_on = alt_sw
+        i_alt = (self.scn.alternator_a or 40.0) if engine_on else 0.0
         i_alt = max(0.0, min(50.0 - i_pv, i_alt))   # DCC50S is a 50A device
         self.alt_w = i_alt * v
-        i_shore = self.scn.shore_charger_a
+        shore_sw = self.switches["shore"]
+        if shore_sw is None:
+            i_shore = self.scn.shore_charger_a
+        else:                   # plugged in / unplugged by hand
+            i_shore = (self.scn.shore_charger_a or 45.0) if shore_sw else 0.0
+        self.shore_a_actual = i_shore
         i_charge_avail = i_pv + i_alt + i_shore
 
         i_charge = self._charge_stage_limit(i_charge_avail, dt_s)
@@ -203,6 +221,12 @@ class VanModel:
 
     def apply_command(self, cmd: dict) -> bool:
         """Human-initiated control (P5 demo). Only the sim accepts these."""
+        if cmd.get("target") == "charge_source":
+            source = cmd.get("source")
+            if source not in self.switches:
+                return False
+            self.switches[source] = bool(cmd.get("enabled"))
+            return True
         if cmd.get("target") == "hvac" and self.hvac is not None:
             mode_map = {"off": 0.0, "heat": 1.0, "cool": 2.0}
             mode = mode_map.get(cmd.get("mode")) if "mode" in cmd else None
@@ -325,6 +349,10 @@ class SimSource(TelemetrySource):
             add("hvac", "mode", m.hvac.mode, 0.0, 1.0)
             add("hvac", "setpoint_c", m.hvac.setpoint_c, 0.0, 0.5)
             add("hvac", "hvac_power_w", m.hvac_w, 0.0, 1.0)
+        # Charge-source switch positions (control state, not measurements).
+        add("charge_ctl", "solar_on", 0.0 if m.switches["solar"] is False else 1.0, 0.0, 1.0)
+        add("charge_ctl", "alternator_on", 1.0 if m.alt_w > 0 else 0.0, 0.0, 1.0)
+        add("charge_ctl", "shore_on", 1.0 if m.shore_a_actual > 0 else 0.0, 0.0, 1.0)
         if "inverter" not in self._offline:  # inverter round (CAN-only device,
             # unreadable in v1 — simulated in demo mode; see PLAN §12.5)
             ac_w = m.loads.last_ac_w

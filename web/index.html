@@ -59,8 +59,13 @@
   </section>
 
   <section class="tile">
-    <div class="tile-head"><h2>Charging from</h2></div>
+    <div class="tile-head"><h2>Charging from</h2><span class="status plain">click to switch · sim</span></div>
     <div class="big charge-src" id="charge-src">–</div>
+    <div class="src-toggles" role="group" aria-label="Charge sources">
+      <button data-src="solar">☀️ Solar<span class="src-w" id="w-solar">–</span></button>
+      <button data-src="alternator">🚐 Alternator<span class="src-w" id="w-alternator">–</span></button>
+      <button data-src="shore">🔌 Shore<span class="src-w" id="w-shore">–</span></button>
+    </div>
     <div class="row sub2"><span id="charge-detail">–</span></div>
   </section>
 

@@ -99,6 +99,40 @@ def sim_checks() -> None:
           src.apply_command({"target": "sensor", "source": "nope",
                              "offline": True}) is False)
 
+    print("== charge-source switches ==")
+    dv = SimSource(get_scenario("driveway"))
+    dv.advance(600)
+    base = {s.metric: s.value for s in dv.emit(1_770_000_600)
+            if s.source in ("dcc50s",)}
+    check("driveway baseline: solar producing, no alt/shore",
+          base["pv_power_w"] > 50 and base["alt_power_w"] == 0.0,
+          f"pv={base['pv_power_w']}W")
+    dv.apply_command({"target": "charge_source", "source": "alternator", "enabled": True})
+    dv.apply_command({"target": "charge_source", "source": "shore", "enabled": True})
+    dv.apply_command({"target": "charge_source", "source": "solar", "enabled": False})
+    dv.advance(60)
+    ems_sw = dv.emit(1_770_000_660)
+    sw = {s.metric: s.value for s in ems_sw if s.source == "dcc50s"}
+    ctl = {s.metric: s.value for s in ems_sw if s.source == "charge_ctl"}
+    check("switches: solar off kills PV at midday",
+          sw["pv_power_w"] == 0.0 and ctl["solar_on"] == 0.0)
+    check("switches: alternator on while parked (engine idling)",
+          sw["alt_power_w"] > 300 and ctl["alternator_on"] == 1.0,
+          f"alt={sw['alt_power_w']}W")
+    check("switches: shore on → charging with no visible source",
+          ctl["shore_on"] == 1.0 and dv.model.shore_a_actual > 0)
+    dv.apply_command({"target": "charge_source", "source": "solar", "enabled": True})
+    dv.apply_command({"target": "charge_source", "source": "alternator", "enabled": False})
+    dv.apply_command({"target": "charge_source", "source": "shore", "enabled": False})
+    dv.advance(60)
+    sw2 = {s.metric: s.value for s in dv.emit(1_770_000_720) if s.source == "dcc50s"}
+    check("switches: everything reverts",
+          sw2["pv_power_w"] > 50 and sw2["alt_power_w"] == 0.0
+          and dv.model.shore_a_actual == 0.0)
+    check("unknown charge source refused",
+          dv.apply_command({"target": "charge_source", "source": "fusion",
+                            "enabled": True}) is False)
+
     print("== inverter (simulated; real unit is CAN-only) ==")
     inv_idle = {s.metric: s.value for s in ems_back if s.source == "inverter"}
     check("inverter idle when no AC load",

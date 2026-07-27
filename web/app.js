@@ -79,7 +79,7 @@ async function refreshLatest() {
   $("pv-yield").textContent = yld == null ? "–" : `${yld.toFixed(0)} Wh today`;
 
   setLoadTile(dv);
-  setChargeTile(dv?.charge_source);
+  setChargeTile(dv?.charge_source, rd);
   setClimateTile(rd);
   setInverterTile(rd);
   fillTable(rd, data.server_ts);
@@ -112,7 +112,7 @@ function setInverterTile(rd) {
 
 const SRC_ICONS = { "solar": "☀️ Solar", "alternator": "🚐 Alternator", "shore (inferred)": "🔌 Shore (inferred)" };
 
-function setChargeTile(cs) {
+function setChargeTile(cs, rd) {
   const el = $("charge-src"), det = $("charge-detail");
   if (!cs) { el.textContent = "–"; return; }
   if (cs.sources.length) {
@@ -120,8 +120,40 @@ function setChargeTile(cs) {
   } else {
     el.textContent = cs.charging ? "unknown source" : "not charging";
   }
-  det.textContent = `solar ${cs.solar_w} W · alternator ${cs.alternator_w} W`;
+
+  // Switch positions come from the sim's control state; watts from telemetry.
+  const ctl = rd?.charge_ctl;
+  const states = {
+    solar: ctl?.solar_on?.value === 1,
+    alternator: ctl?.alternator_on?.value === 1,
+    shore: ctl?.shore_on?.value === 1,
+  };
+  $("w-solar").textContent = `${cs.solar_w} W`;
+  $("w-alternator").textContent = `${cs.alternator_w} W`;
+  // Shore wattage is genuinely unmeasurable (charger is CAN-only): show
+  // state, never a made-up number.
+  $("w-shore").textContent = states.shore ? "on · inferred" : "off";
+  document.querySelectorAll(".src-toggles button").forEach(b => {
+    b.classList.toggle("on", states[b.dataset.src]);
+    b.dataset.on = states[b.dataset.src] ? "1" : "0";
+  });
+  det.textContent = states.shore
+    ? "shore charging is inferred - the charger is invisible to telemetry"
+    : `solar ${cs.solar_w} W · alternator ${cs.alternator_w} W`;
 }
+
+document.querySelectorAll(".src-toggles button").forEach(btn =>
+  btn.addEventListener("click", async () => {
+    const enabled = btn.dataset.on !== "1";
+    try {
+      const r = await fetch("/api/charge_source", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: btn.dataset.src, enabled }),
+      });
+      if (!r.ok) $("charge-detail").textContent = (await r.json()).detail ?? "refused";
+      refreshAudit();
+    } catch { $("charge-detail").textContent = "API unreachable"; }
+  }));
 
 function setClimateTile(rd) {
   const hv = rd?.hvac;
@@ -235,6 +267,7 @@ function fillTable(rd, serverTs) {
   tbody.innerHTML = rows.join("");
   tbody.querySelectorAll("td.dev").forEach(td =>
     td.addEventListener("click", () => {
+      if (!["shunt", "dcc50s", "hvac", "gps", "inverter"].includes(td.dataset.source)) return;
       const offline = Number(td.dataset.age) > 45;   // stale ⇒ bring it back
       fetch("/api/sensor", {
         method: "POST", headers: { "Content-Type": "application/json" },

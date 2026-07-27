@@ -47,6 +47,11 @@ class SensorCommand(BaseModel):
     offline: bool
 
 
+class ChargeSourceCommand(BaseModel):
+    source: Literal["solar", "alternator", "shore"]
+    enabled: bool
+
+
 DEFAULT_ALERT_RULES = {
     "soc_warn_pct": 30.0,
     "soc_crit_pct": 15.0,
@@ -200,6 +205,20 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             result_hash="-", device="HUMAN", duration_ms=0)
         return stamp({"queued": cmd_id,
                       "note": "applied by the poller within one poll interval"})
+
+    @app.post("/api/charge_source")
+    async def charge_source_toggle(body: ChargeSourceCommand):
+        # Demo control mirroring real physical actions: connect/disconnect
+        # panels, run the engine, plug into shore. Sim-only, human-only.
+        if cfg["source"] != "sim":
+            raise HTTPException(
+                403, "charge-source switching is a sim-only demo control")
+        payload = {"target": "charge_source", **body.model_dump()}
+        cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
+        await app.state.store.audit(
+            tool="ui_charge_source", args_json=json.dumps(payload),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"queued": cmd_id})
 
     @app.post("/api/sensor")
     async def sensor(body: SensorCommand):
