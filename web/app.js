@@ -688,7 +688,7 @@ const STORY = [
   { caption: "Questions go to a local model running on this machine's own silicon.",
     target: ".chat-tile",
     action: () => sendChat("Why is the battery charging when it says 100%?") },
-  { caption: "The arithmetic is never the model's job — a calculation service renders the verdict; the model explains it.",
+  { caption: "\"Can I cook dinner?\" — the battery math is done by a built-in calculator, so it's always right. The AI just puts the answer into words.",
     target: ".chat-tile",
     action: () => sendChat("Can I run the cooktop for 25 minutes?") },
   { caption: "Simulating dinner: 1500 W through the inverter.",
