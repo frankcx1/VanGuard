@@ -217,6 +217,7 @@ button.flow-node { cursor: pointer; }
 .fb-net { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .fb-net.charging { color: var(--st-good); }
 .fb-label { color: var(--muted); font-size: 11px; }
+.fb-runtime { color: var(--ink-2); font-size: 11px; margin-top: 3px; font-variant-numeric: tabular-nums; }
 
 /* ---- insight ------------------------------------------------------------------ */
 

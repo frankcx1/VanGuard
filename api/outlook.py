@@ -91,29 +91,43 @@ def compute_outlook(readings: dict, pv_history: list[tuple[int, float]],
     stored_wh = capacity_wh * soc / 100.0
     above_reserve_wh = max(0.0, stored_wh - reserve_wh)
 
-    # Runtime to reserve at the current net rate (conservative: ignores
-    # future solar when currently discharging overnight is the ask).
+    # Source persistence matters: solar dies at sunset, but the alternator
+    # keeps charging as long as the engine runs and shore as long as the
+    # cord is in. Forecasting "0% by sunrise" while the engine covers the
+    # whole system would be wrong.
+    alt_w = _get(readings, "dcc50s", "alt_power_w") or 0.0
+    persistent_source = alt_w > 25 or derived.shore_power_suspected(readings)
+
+    # Runtime to reserve at the current net rate (persistent sources count;
+    # while charging there is no countdown).
     runtime_to_reserve_h = None
     if net_w < -5:
         runtime_to_reserve_h = above_reserve_wh / -net_w
 
-    # Sunrise forecast: tonight's drain at the current load level.
     hours_to_sunrise = ((SUNRISE_H - now_hour) % 24.0) or 24.0
-    drain_w = load_w if load_w is not None else max(0.0, -net_w)
-    overnight_use_wh = drain_w * hours_to_sunrise
-    # Solar still to come today offsets tonight's use only until sunset.
-    soc_at_sunrise = (stored_wh - overnight_use_wh + remaining_solar_wh)
+
+    if persistent_source:
+        # Engine/shore charging continues: project the current NET rate.
+        soc_at_sunrise = stored_wh + net_w * hours_to_sunrise
+        overnight_use_wh = max(0.0, -net_w) * hours_to_sunrise
+        discretionary_wh = above_reserve_wh
+    else:
+        # Off-grid: loads continue all night, solar only until sunset.
+        drain_w = load_w if load_w is not None else max(0.0, -net_w)
+        overnight_use_wh = drain_w * hours_to_sunrise
+        soc_at_sunrise = stored_wh - overnight_use_wh + remaining_solar_wh
+        discretionary_wh = max(0.0, above_reserve_wh - overnight_use_wh
+                               + remaining_solar_wh)
     soc_at_sunrise_pct = max(0.0, min(100.0, soc_at_sunrise / capacity_wh * 100.0))
 
     horizon = float(horizon_h) if horizon_h else hours_to_sunrise
     soc_at_horizon = (stored_wh + (net_w * horizon)) / capacity_wh * 100.0
     soc_at_horizon_pct = max(0.0, min(100.0, soc_at_horizon))
 
-    discretionary_wh = max(0.0, above_reserve_wh - overnight_use_wh
-                           + remaining_solar_wh)
-
     if issues:
         confidence = "low"
+    elif persistent_source:
+        confidence = "medium"     # assumes the engine/cord stays on
     elif remaining_solar_wh > 0:
         confidence = "medium"     # shape-based solar estimate, no weather
     else:
@@ -139,7 +153,11 @@ def compute_outlook(readings: dict, pv_history: list[tuple[int, float]],
         "assumptions": {
             "capacity_wh": capacity_wh,
             "reserve_pct": reserve_pct,
-            "load_basis_w": round(drain_w, 0),
+            "load_basis_w": round(overnight_use_wh / hours_to_sunrise, 0),
+            "persistent_charging": persistent_source,
+            "note": ("assumes alternator/shore charging stays on"
+                     if persistent_source else
+                     "assumes loads continue; solar ends at sunset"),
             "solar_model": "clear-sky bell scaled to today's observed peak",
             "sunrise_h": SUNRISE_H, "sunset_h": SUNSET_H,
         },

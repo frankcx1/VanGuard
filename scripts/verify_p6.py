@@ -76,6 +76,31 @@ def outlook_checks() -> None:
     out3 = compute_outlook(rd(now, gps={"lat": 1.0}), [], {}, now=now)
     check("no battery data → honestly unavailable", out3["available"] is False)
 
+    # Engine running: the alternator keeps charging as long as there's
+    # diesel — no "0% by sunrise" while net-positive on a persistent source.
+    alt = rd(now,
+             shunt={"soc_pct": 46.0, "voltage_v": 13.4, "current_a": 30.0,
+                    "power_w": 402.0},
+             dcc50s={"pv_power_w": 0.0, "alt_power_w": 500.0})
+    out4 = compute_outlook(alt, [], {}, now=now)
+    check("alternator charging → sunrise forecast rises, reserve OK",
+          out4["reserve_ok_overnight"] is True
+          and out4["soc_at_sunrise_pct"] > 46.0
+          and out4["assumptions"]["persistent_charging"] is True,
+          f"sunrise={out4['soc_at_sunrise_pct']}%")
+
+    # Engine on but cooktop bigger than the alternator: net drain persists
+    # and the forecast must still say so.
+    alt2 = rd(now,
+              shunt={"soc_pct": 46.0, "voltage_v": 12.9, "current_a": -90.0,
+                     "power_w": -1160.0},
+              dcc50s={"pv_power_w": 0.0, "alt_power_w": 540.0})
+    out5 = compute_outlook(alt2, [], {}, now=now)
+    check("net drain despite alternator → honest countdown remains",
+          out5["reserve_ok_overnight"] is False
+          and out5["runtime_to_reserve_h"] is not None,
+          f"{out5['runtime_to_reserve_h']}h to reserve")
+
 
 def insight_checks() -> None:
     print("== insight rules ==")

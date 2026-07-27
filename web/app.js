@@ -233,6 +233,23 @@ function setFlowPanel(rd, dv) {
     setToggle($("fridge-btn"), fOn);
     setToggle($("freezer-btn"), zOn);
   }
+  const acOn = rd?.hvac?.mode?.value === 2;
+  $("f-acu").textContent = acOn
+    ? `${(rd.hvac.hvac_power_w?.value ?? 0).toFixed(0)} W` : "off";
+  setToggle($("acu-btn"), acOn);
+
+  // Battery-only runtime readout: reacts live as loads are toggled.
+  const soc = get(rd, "shunt", "soc_pct");
+  const tte = dv?.time_to_empty_h, ttf = dv?.time_to_full_h;
+  const rt = $("f-runtime");
+  if (net != null && net < -5 && tte != null && soc != null) {
+    const toReserve = soc > 20 ? tte * (soc - 20) / soc : 0;
+    rt.textContent = `≈ ${toReserve.toFixed(1)}h to reserve · ${tte.toFixed(1)}h to empty`;
+  } else if (net != null && net > 5 && ttf != null) {
+    rt.textContent = `≈ ${ttf.toFixed(1)}h to full`;
+  } else {
+    rt.textContent = "";
+  }
 }
 
 function setToggle(btn, on) {
@@ -296,6 +313,15 @@ $("inverter-btn").addEventListener("click", async () => {
   }
   try {
     await postJson("/api/inverter", { on });
+    refreshAudit();
+  } catch (e) { showFlowNote(String(e.message)); }
+});
+
+$("acu-btn").addEventListener("click", async () => {
+  const on = $("acu-btn").dataset.on !== "1";
+  optimistic($("acu-btn"), on);
+  try {
+    await postJson("/api/hvac", { mode: on ? "cool" : "off" });
     refreshAudit();
   } catch (e) { showFlowNote(String(e.message)); }
 });
@@ -417,7 +443,7 @@ async function refreshInsight() {
   const a = ol.assumptions;
   $("ol-assumptions").textContent =
     `capacity ${a.capacity_wh} Wh · reserve ${a.reserve_pct}% · ` +
-    `load basis ${a.load_basis_w} W · ${a.solar_model}`;
+    `load basis ${a.load_basis_w} W · ${a.note} · ${a.solar_model}`;
 }
 
 $("ins-dismiss").addEventListener("click", () => {
