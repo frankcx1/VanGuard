@@ -118,57 +118,59 @@ def model_checks(db: Path) -> None:
                       "device_order": ["GPU", "NPU", "CPU"]},
     })
     with TestClient(app) as c:
+        # 1. The money-shot question routes to the calculator, by design:
+        #    the verdict sentence is composed server-side, never generated.
         r = c.post("/v1/chat/completions", json={"messages": [{
             "role": "user",
-            "content": "Can I run the induction cooktop for 25 minutes right "
-                       "now without dropping below 20% battery? Show the math.",
+            "content": "Can I run the cooktop for 25 minutes?",
         }]})
-        check("chat endpoint 200", r.status_code == 200,
+        check("cooktop question 200", r.status_code == 200,
               f"{r.status_code}: {r.text[:120] if r.status_code != 200 else 'ok'}")
         if r.status_code != 200:
             return
         data = r.json()
         answer = data["choices"][0]["message"]["content"]
         vg = data["vanguard"]
-        tools_used = [t["tool"] for t in vg["tool_calls"]]
-        print(f"\n  --- cooktop answer ({vg['device']}, {vg['tokens_per_s']} tok/s, "
-              f"{vg['rounds']} rounds, tools: {tools_used}) ---\n"
+        print(f"\n  --- cooktop answer ({vg['provenance']}) ---\n"
               + "\n".join("  | " + ln for ln in answer.splitlines()) + "\n")
         check("integrity: simulated=true in chat payload", vg["simulated"] is True)
-        check("used telemetry tools (no guessed numbers)",
-              len(tools_used) >= 1 and "estimate_runtime" in tools_used,
-              str(tools_used))
-
-        # The check that matters on camera: the spoken verdict must agree
-        # with the tool's deterministic verdict.
+        check("runtime verdict is deterministic (calculator path)",
+              "deterministic calculation" in vg["provenance"])
         tool_verdicts = [t["result"].get("stays_above_20pct")
                          for t in vg["tool_calls"]
                          if t["tool"] == "estimate_runtime"
                          and "stays_above_20pct" in t["result"]]
-        first_sentence = answer.split(".")[0].lower()
-        says_no = ("no" in first_sentence.split() or "cannot" in first_sentence
-                   or "can't" in first_sentence or "not" in first_sentence.split())
-        if tool_verdicts:
-            expected_no = tool_verdicts[-1] is False
-            check("verdict matches the tool's deterministic verdict",
-                  says_no == expected_no,
-                  f"tool says stays_above={tool_verdicts[-1]}, answer opens: "
-                  f"'{answer.splitlines()[0][:80]}'")
-        else:
-            check("verdict matches the tool's deterministic verdict", False,
-                  "model never passed duration_min")
+        says_no = answer.strip().lower().startswith("no")
+        check("verdict equals the tool's verdict, always",
+              tool_verdicts and says_no == (tool_verdicts[-1] is False),
+              f"tool stays_above={tool_verdicts[-1] if tool_verdicts else '?'}; "
+              f"opens '{answer[:40]}'")
         check("answer shows the numbers",
               len(re.findall(r"\d+(?:\.\d+)?\s*(?:%|min|minutes|h\b|hours|W\b)", answer)) >= 3,
               "≥3 quantities with units")
-        check("answer is dashboard-sized", 30 < len(answer) < 1600,
-              f"{len(answer)} chars")
-        check("serving device recorded", vg["device"] in ("NPU", "GPU", "CPU"),
-              vg["device"])
+
+        # 2. A state question exercises the real model + audited snapshot.
+        r2 = c.post("/v1/chat/completions", json={"messages": [{
+            "role": "user",
+            "content": "What is charging the battery right now, and how is it doing?",
+        }]})
+        check("model question 200", r2.status_code == 200)
+        d2 = r2.json()
+        vg2 = d2["vanguard"]
+        answer2 = d2["choices"][0]["message"]["content"]
+        print(f"\n  --- model answer ({vg2['device']}, {vg2['tokens_per_s']} tok/s) ---\n"
+              + "\n".join("  | " + ln for ln in answer2.splitlines()) + "\n")
+        check("serving device recorded from the runtime",
+              vg2["device"] in ("NPU", "GPU", "CPU"), str(vg2["device"]))
+        check("model answer carries real snapshot numbers",
+              len(re.findall(r"\d+(?:\.\d+)?\s*(?:%|W\b|V\b|A\b)", answer2)) >= 2)
+        check("provenance labeled", bool(vg2["provenance"]))
 
         audit = c.get("/api/audit").json()
+        tools_used = {t["tool"] for t in vg2["tool_calls"]}
         check("every tool used is audited with the serving device",
-              all(any(e["tool"] == t and e["device"] == vg["device"]
-                      for e in audit["entries"]) for t in set(tools_used)))
+              all(any(e["tool"] == t and e["device"] == vg2["device"]
+                      for e in audit["entries"]) for t in tools_used))
 
 
 def main() -> int:

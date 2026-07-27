@@ -56,6 +56,9 @@ SYSTEM_PROMPT = (
     "- Plain sentences, max ~100 words, no markdown headers or tables - "
     "this renders on a small dashboard.\n"
     "- If data is unavailable, say so plainly - never invent a value.\n"
+    "- If the question's premise conflicts with the data (e.g. it claims a "
+    "reading the tools don't show), correct the premise with the real "
+    "number - never play along with it.\n"
     "- Never mention tool names or field names in the answer - speak in "
     "plain English quantities. Never claim data came from a tool you did "
     "not actually call this turn.\n"
@@ -115,17 +118,58 @@ def parse_tool_calls(text: str) -> list[dict]:
     return calls
 
 
-# Anti-fabrication, structural: auto-fetch through the audited read-only
-# tools and inject into the system prompt — but ONLY the domains this model
-# fabricates instead of calling tools (observed: climate — it invented
-# "68°F" twice despite explicit rules; power questions reliably tool-call).
-# Power/battery data deliberately stays OUT of the snapshot: when it was
-# included, the model stopped calling estimate_runtime and freehanded the
-# cooktop math wrong. Starve it of power numbers and it must use the tools.
-SNAPSHOT_TOOLS = ("get_climate", "get_trip_status")
+# Anti-fabrication, structural. Two mechanisms, both server-side, because a
+# 4B ignores prompt rules often enough to matter (observed repeatedly):
+#
+# 1. EVERY request auto-fetches the full current state through the audited
+#    read-only tools and injects it into the system prompt — so any current
+#    number the model states is real. (It fabricated "68°F" and "SOC 100%,
+#    solar 0W" when domains were left out of the snapshot.)
+# 2. Runtime/energy questions are detected HERE and estimate_runtime is
+#    force-called with the parsed load/duration — its verdict is injected as
+#    `runtime_calculation`. (With battery data in context but no forced
+#    calculation, the model freehanded the cooktop math wrong.)
+#
+# The model is a language layer over verified numbers; nothing else.
+SNAPSHOT_TOOLS = ("get_battery_state", "get_solar_state", "get_loads",
+                  "get_climate", "get_trip_status")
+
+WATTS_RE = re.compile(r"(\d{3,4})\s*w", re.IGNORECASE)
+MINUTES_RE = re.compile(r"(\d{1,3})\s*(?:min|minutes)", re.IGNORECASE)
+HOURS_RE = re.compile(r"(\d{1,2}(?:\.\d)?)\s*(?:h\b|hours?)", re.IGNORECASE)
+RUNTIME_KEYWORDS = ("cooktop", "microwave", "run the", "run my", "how long",
+                    "overnight", "a/c", "air condition", "until sunrise",
+                    "enough power")
+KNOWN_LOADS_W = {"cooktop": 1700.0, "microwave": 1135.0, "a/c": 900.0,
+                 "air condition": 900.0}
 
 
-async def _snapshot(runner: ToolRunner, device: str, trace: list) -> str:
+def detect_runtime_intent(question: str) -> dict | None:
+    q = question.lower()
+    if not any(k in q for k in RUNTIME_KEYWORDS):
+        return None
+    watts = None
+    if WATTS_RE.search(q):
+        watts = float(WATTS_RE.search(q).group(1))
+    else:
+        for name, w in KNOWN_LOADS_W.items():
+            if name in q:
+                watts = w
+                break
+    if watts is None:
+        return None                     # e.g. "enough power until sunrise"
+    args = {"load_watts": watts}
+    if MINUTES_RE.search(q):
+        args["duration_min"] = float(MINUTES_RE.search(q).group(1))
+    elif HOURS_RE.search(q):
+        args["duration_min"] = float(HOURS_RE.search(q).group(1)) * 60.0
+    elif "overnight" in q:
+        args["duration_min"] = 8 * 60.0
+    return args
+
+
+async def _snapshot(runner: ToolRunner, device: str, trace: list,
+                    question: str = "") -> str:
     parts = {}
     for name in SNAPSHOT_TOOLS:
         result = await runner.call(name, {}, device=device)
@@ -151,6 +195,23 @@ async def chat_completions(body: ChatRequest, request: Request):
     runner = ToolRunner(request.app.state.store)
     simulated = request.app.state.simulated
     t_start = time.perf_counter()
+    question = body.messages[-1].content if body.messages else ""
+
+    # Runtime/energy verdicts NEVER pass through the model. We tried three
+    # escalating designs (prompt rules, snapshot injection, synthetic tool
+    # exchange) and the 4B still inverted verdicts it was quoting. So the
+    # server detects the question, runs the calculator, and composes the
+    # answer deterministically — the review's own principle, taken all the
+    # way: "the model may not perform arithmetic presented as authoritative."
+    if detect_runtime_intent(question):
+        from api.deterministic import respond
+        text, trace = await respond(question, runner, insight={}, outlook={})
+        return _response(text, trace, simulated, device=None, rounds=0,
+                         tokens_per_s=None, ttft_ms=None,
+                         total_ms=int((time.perf_counter() - t_start) * 1000),
+                         model_name="calculator",
+                         provenance="deterministic calculation · "
+                                    "verdict computed, never generated")
 
     try:
         engine, tokenizer = await get_engine(request)
@@ -187,7 +248,7 @@ async def chat_completions(body: ChatRequest, request: Request):
 
 
 def _response(text, trace, simulated, device, rounds, tokens_per_s, ttft_ms,
-              total_ms, model_name):
+              total_ms, model_name, provenance=None):
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
@@ -206,21 +267,22 @@ def _response(text, trace, simulated, device, rounds, tokens_per_s, ttft_ms,
             "ttft_ms": ttft_ms,
             "tool_calls": trace,
             "rounds": rounds,
-            "provenance": _provenance(trace, device),
+            "provenance": provenance or _provenance(trace, device),
         },
     }
 
 
 async def _run_loop(body, request, engine, tokenizer, runner, system_prompt):
     trace: list[dict] = []
-    snapshot = await _snapshot(runner, engine.device, trace)
+    question = body.messages[-1].content if body.messages else ""
+    snapshot = await _snapshot(runner, engine.device, trace, question)
     system = (
         system_prompt
-        + "\n\nLive climate/trip snapshot, auto-fetched through the audited "
-          "read-only tools as this message arrived. Cabin temperature, HVAC "
-          "and position values MUST come from here:\n" + snapshot
-        + "\nEverything else (battery, solar, loads, history, runtime math, "
-          "nearby places) is NOT in this snapshot - call the tools."
+        + "\n\nLive telemetry snapshot, auto-fetched through the audited "
+          "read-only tools as this message arrived. Every current value "
+          "MUST come from here - anything not present here is unknown to "
+          "you.\n" + snapshot
+        + "\nFor history or nearby places, call the tools."
     )
     history: list[dict] = [{"role": "system", "content": system}]
     history += [m.model_dump() for m in body.messages if m.role != "system"]

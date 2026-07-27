@@ -687,7 +687,7 @@ const STORY = [
     target: ".insight-tile" },
   { caption: "Questions go to a local model running on this machine's own silicon.",
     target: ".chat-tile",
-    action: () => sendChat("Why is the battery charging when it says 100%?") },
+    action: () => sendChat("What is charging the battery right now, and how is it doing?") },
   { caption: "\"Can I cook dinner?\" — the battery math is done by a built-in calculator, so it's always right. The AI just puts the answer into words.",
     target: ".chat-tile",
     action: () => sendChat("Can I run the cooktop for 25 minutes?") },
@@ -771,3 +771,13 @@ setInterval(refreshSparks, REFRESH_HISTORY_MS);
 setInterval(refreshAudit, 15_000);
 setInterval(refreshTrip, 10_000);
 setInterval(refreshRuntime, 20_000);
+
+// Deep link for filming: #story starts the guided demo, #story=5 jumps to
+// step 5 (visual only — actions fire on real Next clicks, not on jumps).
+const storyHash = location.hash.match(/^#story(?:=(\d+))?$/);
+if (storyHash) {
+  storyStep = storyHash[1]
+    ? Math.min(STORY.length - 1, Math.max(0, Number(storyHash[1]) - 1))
+    : 0;
+  storyRender();
+}

@@ -178,7 +178,8 @@ def api_checks() -> None:
         vg = data["vanguard"]
         answer = data["choices"][0]["message"]["content"]
         check("fallback provenance labeled",
-              "no model active" in vg["provenance"])
+              "deterministic" in vg["provenance"],
+              vg["provenance"])
         check("fallback cooktop verdict correct (No at dusk_low SOC 38%)",
               answer.startswith("No") and "19.6%" in answer, answer[:90])
         check("fallback used real audited tools",

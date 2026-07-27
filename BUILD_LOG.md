@@ -391,6 +391,32 @@ the runtime reports). The genuinely good ideas got built:
 - Accessibility: focus-visible, aria-live on insight/alerts/story, reduced
   motion, semantic controls. README rewritten with the safety disclaimer.
 
+**Story-mode shakedown (late evening).** Running the story steps against the
+live system caught two model failures and forced the endgame architecture:
+
+1. The scripted question "why is the battery charging when it says 100%?"
+   met a battery at 89% — and the model *played along with the false
+   premise*, inventing maintenance-mode lore. Fixed the script question and
+   added a correct-the-premise prompt rule; the structural fix below is what
+   actually made it stick (it now answers "91%, not 100%").
+2. The 4B inverted the cooktop verdict AGAIN even with the calculator's
+   result injected into context (three designs tried: prompt rules,
+   snapshot injection, synthetic tool exchange). Conclusion recorded:
+   **this model cannot be trusted to restate a verdict.** Final
+   architecture: the server detects runtime/energy questions, runs
+   estimate_runtime, and composes the verdict sentence deterministically —
+   provenance "deterministic calculation · verdict computed, never
+   generated". The model handles every other question over a full audited
+   snapshot (all five domains — fabrication is now structurally impossible
+   for current-state numbers), with sign conventions pre-worded by the
+   tools (state: "charging", charging_from: [...]) after it misread +55A
+   as discharge.
+
+Also: story deep-links (#story, #story=N — visual jumps, actions fire only
+on real Next clicks). verify_p4 restructured: calculator path asserted
+verdict-always-equals-tool; separate model-path e2e for state questions.
+P4 25/25.
+
 Verification: new `verify_p6.py` — **32/32** (outlook math incl. the
 review's 46%-overnight scenario landing at 6% by sunrise; insight rules;
 alert severities; provenance; no-model fallback answering the cooktop

@@ -77,8 +77,15 @@ class ToolRunner:
         sh = {m: v for m, (ts, v) in rd.get("shunt", {}).items()}
         if not sh:
             return {"error": "no shunt data"}
+        # The signs are pre-interpreted into words: a small model misreads
+        # "+55A" as discharge often enough that the tool states it plainly.
+        i = sh.get("current_a") or 0.0
+        state = "charging" if i > 0.5 else "discharging" if i < -0.5 else "idle"
+        cs = derived.charge_source(rd)
         return {
             "soc_pct": _r(sh.get("soc_pct"), 0),
+            "state": state,
+            "charging_from": cs["sources"] if cs["sources"] else "nothing",
             "voltage_v": _r(sh.get("voltage_v"), 2),
             "current_a": _r(sh.get("current_a"), 1),
             "power_w": _r(sh.get("power_w"), 0),
