@@ -676,6 +676,79 @@ function line(x1, y1, x2, y2, stroke, w) {
   return l;
 }
 
+/* ---- demo story mode --------------------------------------------------------
+   Drives the LIVE dashboard — real requests, real state changes, all audited.
+   Manual pacing (Next/Back) so the presenter controls the take. */
+
+const STORY = [
+  { caption: "This van's power system is monitored entirely on this device — no internet, no cloud.",
+    target: "header" },
+  { caption: "VanGuard interprets the telemetry continuously — deterministic rules, always on, no model required.",
+    target: ".insight-tile" },
+  { caption: "Questions go to a local model running on this machine's own silicon.",
+    target: ".chat-tile",
+    action: () => sendChat("Why is the battery charging when it says 100%?") },
+  { caption: "The arithmetic is never the model's job — a calculation service renders the verdict; the model explains it.",
+    target: ".chat-tile",
+    action: () => sendChat("Can I run the cooktop for 25 minutes?") },
+  { caption: "Simulating dinner: 1500 W through the inverter.",
+    target: ".flow-tile",
+    action: () => postJson("/api/appliance", { name: "cooktop", on: true }).then(refreshAudit) },
+  { caption: "Power flow and the forecast update from the same deterministic services.",
+    target: ".flow-tile",
+    action: () => refreshInsight() },
+  { caption: "Still offline. Every tool call is audited — and none of them left this device.",
+    target: ".diag-tile" },
+  { caption: "Monitor. Understand. Act. Even when the cloud is out of reach.",
+    target: null,
+    action: () => postJson("/api/appliance", { name: "cooktop", on: false }).then(refreshAudit) },
+];
+
+let storyStep = -1;
+
+function storyRender() {
+  document.querySelectorAll(".story-highlight").forEach(el =>
+    el.classList.remove("story-highlight"));
+  const active = storyStep >= 0 && storyStep < STORY.length;
+  $("storybar").classList.toggle("hidden", !active);
+  document.querySelector("main.grid").classList.toggle("story-dim", active);
+  if (!active) return;
+  const step = STORY[storyStep];
+  $("story-caption").textContent = step.caption;
+  $("story-dots").innerHTML = STORY.map((_, i) =>
+    `<span class="${i === storyStep ? "on" : ""}">●</span>`).join("");
+  if (step.target) {
+    const el = document.querySelector(step.target);
+    if (el) el.classList.add("story-highlight");
+  }
+  $("story-back").disabled = storyStep === 0;
+  $("story-next").textContent = storyStep === STORY.length - 1 ? "Finish" : "Next ▶";
+}
+
+function storyGo(delta) {
+  const next = storyStep + delta;
+  if (next >= STORY.length || (storyStep === STORY.length - 1 && delta > 0)) {
+    storyStep = -1;
+    storyRender();
+    return;
+  }
+  storyStep = Math.max(0, next);
+  storyRender();
+  // Actions fire only moving forward — Back re-points the spotlight without
+  // re-running state changes.
+  if (delta > 0 && STORY[storyStep].action) {
+    Promise.resolve(STORY[storyStep].action()).catch(() => {});
+  }
+}
+
+$("story-btn").addEventListener("click", () => { storyStep = -1; storyGo(1); });
+$("story-next").addEventListener("click", () => storyGo(1));
+$("story-back").addEventListener("click", () => storyGo(-1));
+$("story-exit").addEventListener("click", () => {
+  postJson("/api/appliance", { name: "cooktop", on: false }).catch(() => {});
+  storyStep = -1; storyRender();
+});
+
 /* ---- boot ------------------------------------------------------------------ */
 
 async function tick() {

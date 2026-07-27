@@ -23,6 +23,11 @@ live:                  # M2 — requires the BT-2 dongle and M1 passing
   shunt_mac: ""
   bt2_mac: ""
 
+power:                 # deterministic calc service (api/outlook.py)
+  capacity_wh: 3840    # 300Ah @ 12.8V [verified — OGA invoice]
+  reserve_pct: 20      # operating modes may override (sleep 30, storage 50…)
+  inverter_efficiency: 0.88
+
 inference:             # P3+ — the model is a config value, not an architecture
   model_dir: ov_qwen3_4b_instruct_2507_int4_npu
   device_order: [GPU, NPU, CPU]   # first that loads wins; serving device is

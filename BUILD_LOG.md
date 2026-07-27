@@ -351,6 +351,54 @@ tile, climate controls, Tofino POIs, mic button, HUMAN rows in the audit.
 
 ---
 
+## 2026-07-26 (evening) — P6: "intelligence, not merely telemetry"
+
+Frank brought an external review (LLM-written, hadn't read the repo).
+Triaged rather than swallowed: its centerpiece — deterministic calculations
+with the model only explaining — was already built and tested; its "make
+the AI simulated / don't claim NPU" premises were wrong for this project
+(our inference is real and measured, and we only ever display the device
+the runtime reports). The genuinely good ideas got built:
+
+- **Status rail**: OFFLINE · SIM DATA · LOCAL AI: <device from /api/runtime>
+  · DATA STAYS ON DEVICE (tooltip: design guarantee, not a network audit) ·
+  MIC READY · operating mode · 🎬 Story · time.
+- **Power-flow panel** consolidating solar/alternator/shore (still
+  click-to-switch) → battery → house DC / AC-via-inverter / cooktop toggle,
+  with a live reconciliation line ("174W in − 30W out ≈ +144W battery").
+- **VanGuard Insight** — `api/insight.py`, deterministic rules → NL:
+  power story, 100%-but-charging explainer, hot/cold cabin with proposed
+  (confirm-gated, sim-labeled) HVAC action, driving-without-alternator,
+  sensor-conflict data-quality notes. Explain / What changed? / Read aloud
+  (local speechSynthesis) / Dismiss.
+- **Power Outlook** — `api/outlook.py`: runtime-to-reserve, SOC at sunrise
+  (clear-sky bell scaled to today's observed peak), discretionary Wh,
+  confidence that degrades with staleness, assumptions listed. Real 3840Wh
+  capacity, not the review's generic 5kWh.
+- **Operating modes** as policy data (camp/sleep/drive/storage/emergency →
+  reserve + alert thresholds), persisted, audited.
+- **Alert stack** with severities incl. advisory + data-quality.
+- **Diagnostics drawer** — readings + audit + honest AI-runtime panel move
+  behind "30 readings · all fresh · N local tool calls · 0 external calls".
+- **Chat upgrades**: suggested-question chips, provenance label on every
+  answer ("calculation + local model (GPU)" / "no model active"), evidence
+  expander showing the actual tool calls.
+- **Deterministic fallback** (`api/deterministic.py`): no model → same
+  audited tools, template prose, correct cooktop verdict, labeled.
+- **Demo Story mode**: 8 presenter-paced steps driving the live dashboard
+  (includes simulating the cooktop via the new audited appliance command);
+  ends "Monitor. Understand. Act. Even when the cloud is out of reach."
+- Accessibility: focus-visible, aria-live on insight/alerts/story, reduced
+  motion, semantic controls. README rewritten with the safety disclaimer.
+
+Verification: new `verify_p6.py` — **32/32** (outlook math incl. the
+review's 46%-overnight scenario landing at 6% by sunrise; insight rules;
+alert severities; provenance; no-model fallback answering the cooktop
+question correctly; runtime honesty — nothing loaded → no device claimed;
+mode policies; appliance command). Full fast regression green (P1/P2/P4/P5).
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>

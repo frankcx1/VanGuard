@@ -28,6 +28,7 @@
         <option value="emergency">Emergency</option>
       </select>
     </label>
+    <button id="story-btn" class="badge rail" title="Guided 60-90s demo sequence on the live dashboard">🎬 Story</button>
     <span id="stale-chip" class="badge stale hidden">⚠ STALE</span>
     <span id="clock" class="badge quiet"></span>
   </div>
@@ -169,6 +170,16 @@
     <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th></tr></thead>
     <tbody></tbody>
   </table>
+</div>
+
+<div id="storybar" class="storybar hidden" aria-live="polite">
+  <span id="story-caption"></span>
+  <span class="story-controls">
+    <span id="story-dots"></span>
+    <button id="story-back" aria-label="Previous step">◀</button>
+    <button id="story-next" aria-label="Next step">Next ▶</button>
+    <button id="story-exit" aria-label="Exit story">✕</button>
+  </span>
 </div>
 
 <div id="tooltip" class="tooltip hidden"></div>
