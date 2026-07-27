@@ -183,6 +183,34 @@ class ToolRunner:
         return {"radius_mi": radius_mi, "pois": pois,
                 "source": "offline curated dataset"}
 
+    async def tool_get_network(self) -> dict:
+        rd = await self.store.latest()
+        net = {m: v for m, (ts, v) in rd.get("network", {}).items()}
+        if not net:
+            return {"error": "no connectivity data"}
+        mode = {0.0: "offline", 1.0: "5G cellular", 2.0: "local wifi",
+                3.0: "starlink"}.get(net.get("mode"), "offline")
+        out = {
+            "uplink": mode,
+            "note": "uplink carries internet only - AI and telemetry stay on device",
+        }
+        if mode != "offline":
+            out.update({
+                "signal_pct": _r(net.get("signal_pct"), 0),
+                "latency_ms": _r(net.get("latency_ms"), 0),
+                "down_mbps": _r(net.get("down_mbps"), 0),
+                "up_mbps": _r(net.get("up_mbps"), 0),
+            })
+        sl = {m: v for m, (ts, v) in rd.get("starlink", {}).items()}
+        if sl:
+            out["starlink_dish"] = {
+                "state": {0.0: "booting", 1.0: "online",
+                          2.0: "obstructed"}.get(sl.get("state")),
+                "obstruction_pct": _r(sl.get("obstruction_pct")),
+                "power_w": _r(sl.get("power_w"), 0),
+            }
+        return out
+
     async def tool_estimate_runtime(self, load_watts: float,
                                     duration_min: float | None = None) -> dict:
         load_watts = float(load_watts)
@@ -258,6 +286,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "radius_mi": {"type": "number", "minimum": 1, "maximum": 100},
             "limit": {"type": "integer", "minimum": 1, "maximum": 8}},
             "required": []}}},
+    {"type": "function", "function": {
+        "name": "get_network",
+        "description": "Connectivity: uplink (offline/5G/wifi/starlink), signal, latency, throughput, Starlink dish state/power.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {
         "name": "estimate_runtime",
         "description": ("Runtime for a DC load from current SOC. Pass "

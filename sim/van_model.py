@@ -151,6 +151,8 @@ class VanModel:
         # real thing between uses.
         self.inverter_on = scenario.shore_charger_a > 0
         self.note = None      # one-shot message surfaced to the UI
+        from sim.network import NetworkSim
+        self.network = NetworkSim(scenario.seed)
         self.battery = Battery(scenario.start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
@@ -199,6 +201,11 @@ class VanModel:
             self.inverter_on = True
         if self.inverter_on and not shore_active:
             self.load_w += 18.0     # inverter idle draw is a real battery load
+
+        self.network.step(dt_s)
+        # The roof dish runs off the van's 12V — a real load. 5G is the
+        # Surface's own modem; someone else's Wi-Fi costs nothing.
+        self.load_w += self.network.starlink_power_w
 
         if self.gps is not None:
             self.gps.step(dt_s)
@@ -273,6 +280,8 @@ class VanModel:
                 if dropped:
                     self.note = f"inverter off - {', '.join(dropped)} lost 110V"
             return True
+        if cmd.get("target") == "network":
+            return self.network.set_mode(cmd.get("mode", ""))
         if cmd.get("target") == "load_switch":
             name = cmd.get("name")
             if name not in ("fridge", "freezer"):
@@ -424,6 +433,16 @@ class SimSource(TelemetrySource):
             add("inverter", "ac_out_w", ac_w, 0.5 if ac_w > 0 else 0.0, 1.0)
             add("inverter", "dc_in_w", dc_in, 0.5 if dc_in > 0 else 0.0, 1.0)
             add("inverter", "load_pct", ac_w / 3000.0 * 100.0, 0.0, 1.0)
+        net = m.network
+        add("network", "mode", net.mode, 0.0, 1.0)
+        add("network", "signal_pct", net.signal_pct, 0.0, 1.0)
+        add("network", "latency_ms", net.latency_ms, 0.0, 1.0)
+        add("network", "down_mbps", net.down_mbps, 0.0, 0.1)
+        add("network", "up_mbps", net.up_mbps, 0.0, 0.1)
+        if net.mode == 3.0:   # Starlink dish detail (mirrors the gRPC API)
+            add("starlink", "state", net.starlink_state, 0.0, 1.0)
+            add("starlink", "obstruction_pct", net.obstruction_pct, 0.0, 0.1)
+            add("starlink", "power_w", net.starlink_power_w, 0.0, 0.1)
         # Dedicated smart switches (BT-controllable in the hardware plan).
         add("switches", "inverter_on", 1.0 if m.inverter_on else 0.0, 0.0, 1.0)
         add("switches", "fridge_on",

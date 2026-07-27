@@ -170,6 +170,46 @@ def sim_checks() -> None:
           bp.model.battery.i_net_a > 5,
           f"net={bp.model.battery.i_net_a:.1f}A")
 
+    print("== network / Starlink Mini ==")
+    nw = SimSource(get_scenario("driveway"))
+    nw.advance(60)
+    n0 = {s.metric: s.value for s in nw.emit(1_770_000_060)
+          if s.source == "network"}
+    check("network defaults to offline (the demo story's baseline)",
+          n0.get("mode") == 0.0 and n0.get("signal_pct") == 0.0)
+    ok_n = nw.apply_command({"target": "network", "mode": "starlink"})
+    nw.advance(10)
+    boot = {s.metric: s.value for s in nw.emit(1_770_000_070)
+            if s.source == "starlink"}
+    check("starlink boots first (~60W spike, like the real Mini)",
+          ok_n and boot.get("state") == 0.0 and boot.get("power_w", 0) > 50,
+          f"boot power={boot.get('power_w')}W")
+    nw.advance(60)
+    ems_sl = nw.emit(1_770_000_130)
+    sl = {s.metric: s.value for s in ems_sl if s.source == "starlink"}
+    nn = {s.metric: s.value for s in ems_sl if s.source == "network"}
+    check("starlink online: dish telemetry mirrors the gRPC API",
+          sl.get("state") in (1.0, 2.0) and 0 <= sl.get("obstruction_pct", -1) <= 25
+          and 12 <= sl.get("power_w", 0) <= 32,
+          f"state={sl.get('state')}, obstr={sl.get('obstruction_pct')}%, "
+          f"power={sl.get('power_w')}W")
+    check("dish power is a real battery load",
+          nw.model.network.starlink_power_w > 12
+          and nw.model.load_w > nw.model.network.starlink_power_w)
+    check("starlink throughput plausible",
+          nn.get("down_mbps", 0) > 30 and nn.get("latency_ms", 0) > 15,
+          f"{nn.get('down_mbps')}Mbps @ {nn.get('latency_ms')}ms")
+    nw.apply_command({"target": "network", "mode": "cell"})
+    nw.advance(10)
+    ems_c = nw.emit(1_770_000_140)
+    nc = {s.metric: s.value for s in ems_c if s.source == "network"}
+    check("switch to 5G: dish powers down, cellular stats appear",
+          nc.get("mode") == 1.0 and nc.get("signal_pct", 0) > 0
+          and not any(s.source == "starlink" for s in ems_c)
+          and nw.model.network.starlink_power_w == 0.0)
+    check("unknown network mode refused",
+          nw.apply_command({"target": "network", "mode": "dialup"}) is False)
+
     print("== fridge / freezer smart switches ==")
     sw_src = SimSource(get_scenario("driveway"))
     sw_src.advance(3600)

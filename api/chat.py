@@ -132,7 +132,7 @@ def parse_tool_calls(text: str) -> list[dict]:
 #
 # The model is a language layer over verified numbers; nothing else.
 SNAPSHOT_TOOLS = ("get_battery_state", "get_solar_state", "get_loads",
-                  "get_climate", "get_trip_status")
+                  "get_climate", "get_trip_status", "get_network")
 
 WATTS_RE = re.compile(r"(\d{3,4})\s*w", re.IGNORECASE)
 MINUTES_RE = re.compile(r"(\d{1,3})\s*(?:min|minutes)", re.IGNORECASE)

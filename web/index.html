@@ -139,6 +139,21 @@
       <div class="big"><span id="inv-ac">–</span><span class="unit">W AC out</span></div>
       <div class="row sub2"><span id="inv-detail">3000 W rated</span></div>
     </section>
+    <section class="tile net-tile">
+      <div class="tile-head"><h2>Network</h2><span id="net-state" class="status plain">offline</span></div>
+      <div class="net-row">
+        <span id="net-bars" class="net-bars" aria-hidden="true">▂▄▆█</span>
+        <span id="net-stats">–</span>
+      </div>
+      <div class="seg" role="group" aria-label="Uplink">
+        <button data-net="off">Off</button>
+        <button data-net="cell">5G</button>
+        <button data-net="wifi">Wi-Fi</button>
+        <button data-net="starlink">Starlink</button>
+      </div>
+      <div class="row sub2"><span id="net-dish">uplink is internet only · AI &amp; telemetry stay on device</span></div>
+    </section>
+
     <section class="tile scrolly">
       <div class="tile-head"><h2>Alerts</h2><span id="alert-count" class="status plain"></span></div>
       <ul id="alert-list"></ul>

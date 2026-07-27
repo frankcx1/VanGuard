@@ -68,6 +68,10 @@ class LoadSwitchCommand(BaseModel):
     on: bool
 
 
+class NetworkCommand(BaseModel):
+    mode: Literal["off", "cell", "wifi", "starlink"]
+
+
 DEFAULT_ALERT_RULES = {
     "soc_warn_pct": 30.0,
     "soc_crit_pct": 15.0,
@@ -142,6 +146,10 @@ def evaluate_alerts(readings: dict, overrides: dict, stale: bool,
         alert("reserve-forecast", "warning",
               f"forecast {outlook['soc_at_sunrise_pct']:.0f}% by sunrise - "
               "below reserve")
+    sl_state = readings.get("starlink", {}).get("state", (0, None))[1]
+    if sl_state == 2.0:
+        alert("starlink-obstructed", "advisory",
+              "Starlink dish reports an obstruction - throughput degraded")
     return out
 
 
@@ -375,6 +383,17 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
         await app.state.store.audit(
             tool="ui_load_switch", args_json=json.dumps(payload),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"queued": cmd_id})
+
+    @app.post("/api/network")
+    async def network(body: NetworkCommand):
+        if cfg["source"] != "sim":
+            raise HTTPException(403, "network switching is a sim-only demo control")
+        payload = {"target": "network", **body.model_dump()}
+        cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
+        await app.state.store.audit(
+            tool="ui_network", args_json=json.dumps(payload),
             result_hash="-", device="HUMAN", duration_ms=0)
         return stamp({"queued": cmd_id})
 

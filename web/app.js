@@ -76,9 +76,85 @@ async function refreshLatest() {
   setFlowPanel(rd, dv);
   setClimateTile(rd);
   setInverterTile(rd);
+  setNetworkTile(rd);
   fillTable(rd, data.server_ts);
   updateDiagSummary(rd, data.server_ts);
 }
+
+/* ---- network -------------------------------------------------------------- */
+
+const NET_MODES = { 0: "off", 1: "cell", 2: "wifi", 3: "starlink" };
+const NET_LABELS = { 0: "offline", 1: "5G cellular", 2: "Wi-Fi · local hotspot", 3: "Starlink Mini" };
+
+function setNetworkTile(rd) {
+  const net = rd?.network;
+  if (!net) return;
+  const mode = net.mode?.value ?? 0;
+  const modeName = NET_MODES[mode];
+  const sig = net.signal_pct?.value ?? 0;
+  const sl = rd?.starlink;
+  const booting = mode === 3 && sl?.state?.value === 0;
+
+  document.querySelectorAll(".net-tile .seg button").forEach(b => {
+    if (b.dataset.pendingUntil && Date.now() < Number(b.dataset.pendingUntil)) return;
+    b.classList.toggle("active", b.dataset.net === modeName);
+  });
+
+  const bars = Math.min(4, Math.max(0, Math.ceil(sig / 25)));
+  $("net-bars").innerHTML = ["▂", "▄", "▆", "█"].map((ch, i) =>
+    `<span class="${i < bars ? "lit" : ""}">${ch}</span>`).join("");
+
+  if (mode === 0) {
+    $("net-state").textContent = "offline";
+    $("net-state").className = "status plain";
+    $("net-stats").textContent = "no uplink";
+  } else if (booting) {
+    $("net-state").textContent = "Starlink · booting…";
+    $("net-state").className = "status warn";
+    $("net-stats").textContent = "dish acquiring satellites";
+  } else {
+    $("net-state").textContent = NET_LABELS[mode];
+    $("net-state").className = "status good";
+    $("net-stats").textContent =
+      `${(net.latency_ms?.value ?? 0).toFixed(0)} ms · ` +
+      `${(net.down_mbps?.value ?? 0).toFixed(0)}↓ ${(net.up_mbps?.value ?? 0).toFixed(0)}↑ Mbps`;
+  }
+
+  if (mode === 3 && sl) {
+    const st = { 0: "booting", 1: "online", 2: "⚠ OBSTRUCTED" }[sl.state?.value] ?? "–";
+    $("net-dish").textContent =
+      `dish ${(sl.power_w?.value ?? 0).toFixed(0)} W off the battery · ` +
+      `obstruction ${(sl.obstruction_pct?.value ?? 0).toFixed(0)}% · ${st}`;
+  } else {
+    $("net-dish").textContent = "uplink is internet only · AI & telemetry stay on device";
+  }
+
+  // Rail badge: connectivity truth at a glance.
+  const badge = $("net-badge");
+  if (mode === 0) {
+    badge.textContent = "⛔ OFFLINE";
+    badge.className = "badge rail";
+  } else if (booting) {
+    badge.textContent = "📡 STARLINK · booting";
+    badge.className = "badge rail warn";
+  } else {
+    badge.textContent = { 1: "📶 5G", 2: "🛜 WI-FI", 3: "📡 STARLINK" }[mode] +
+      ` · ${(net.down_mbps?.value ?? 0).toFixed(0)} Mbps`;
+    badge.className = "badge rail good";
+  }
+}
+
+document.querySelectorAll(".net-tile .seg button").forEach(btn =>
+  btn.addEventListener("click", async () => {
+    document.querySelectorAll(".net-tile .seg button").forEach(b => {
+      b.classList.toggle("active", b === btn);
+      b.dataset.pendingUntil = String(Date.now() + 5000);
+    });
+    try {
+      await postJson("/api/network", { mode: btn.dataset.net });
+      refreshAudit();
+    } catch (e) { showFlowNote(String(e.message)); }
+  }));
 
 function setSocStatus(soc) {
   const el = $("soc-status");
