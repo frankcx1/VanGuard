@@ -66,7 +66,21 @@ async function refreshLatest() {
   PRESENTATION = data.presentation === true;
   document.body.classList.toggle("presentation", PRESENTATION);
 
-  $("sim-badge").classList.toggle("hidden", data.simulated !== true || PRESENTATION);
+  // Disclosure as a strength: presentation mode swaps the warning badge for
+  // the honest flex instead of hiding simulation entirely.
+  const simBadge = $("sim-badge");
+  if (data.simulated && PRESENTATION) {
+    simBadge.textContent = "SIMULATED VAN · REAL LOCAL AI";
+    simBadge.className = "badge rail";
+    simBadge.classList.remove("hidden");
+  } else if (data.simulated) {
+    simBadge.textContent = "⚠ SIM DATA";
+    simBadge.className = "badge sim";
+  } else {
+    simBadge.classList.add("hidden");
+  }
+  $("flow-live").textContent = "LIVE · " + new Date(data.server_ts * 1000)
+    .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " ·";
   if (PRESENTATION && $("hvac-note").textContent.includes("phase 2")) {
     $("hvac-note").textContent = "smart climate control";
   }
@@ -384,21 +398,9 @@ const INV_STATES = {
 };
 
 function setInverterTile(rd) {
-  const inv = rd?.inverter;
-  if (!inv) {
-    $("inv-ac").textContent = "–";
-    $("inv-state").textContent = "no data";
-    $("inv-state").className = "status plain";
-    $("inv-detail").textContent = "CAN-only device · not readable until phase 2";
-    return;
-  }
-  const [label, cls] = INV_STATES[inv.state?.value] ?? ["–", "status plain"];
-  $("inv-state").textContent = label;
-  $("inv-state").className = cls;
-  $("inv-ac").textContent = (inv.ac_out_w?.value ?? 0).toFixed(0);
-  $("inv-detail").textContent =
-    `3000 W rated · ${(inv.load_pct?.value ?? 0).toFixed(0)}% load · ` +
-    `${(inv.dc_in_w?.value ?? 0).toFixed(0)} W DC in`;
+  // The standalone inverter tile was folded into Power Flow (P8); keep this
+  // guard so nothing breaks if the elements are absent.
+  if (!$("inv-ac")) return;
 }
 
 /* ---- insight + outlook ---------------------------------------------------------- */
@@ -509,6 +511,9 @@ async function refreshRuntime() {
   if (r.loaded) {
     badge.textContent = `LOCAL AI: ${r.device_confirmed} · ${r.model_short}`;
     badge.className = "badge rail good";
+    // The single most differentiated architectural point, said plainly:
+    $("insight-prov").textContent =
+      `verdict: deterministic rules · explanation: ${r.model_short} (${r.device_confirmed})`;
   } else if (r.model_exported) {
     badge.textContent = `LOCAL AI: READY · ${r.model_short}`;
     badge.className = "badge rail";
@@ -531,6 +536,66 @@ async function refreshRuntime() {
     ? `AI on ${r.device_confirmed} (measured)` : (r.model_exported
       ? "AI ready · not loaded yet" : "deterministic mode");
 }
+
+/* ---- guardian --------------------------------------------------------------- */
+
+const G_STAGES = ["detected", "verified", "decided", "acted", "confirmed"];
+
+async function refreshGuardian() {
+  const g = await (await fetch("/api/guardian")).json();
+  if ($("g-level-sel").value !== g.level) $("g-level-sel").value = g.level;
+  const armed = $("g-armed");
+  armed.textContent = g.armed
+    ? `ARMED · ${g.mode.toUpperCase()} POLICY`
+    : (g.level === "observe" ? "OBSERVING ONLY" : "STANDBY");
+  armed.className = g.armed ? "status good" : "status plain";
+
+  const active = g.active;
+  const tl = $("g-timeline");
+  const body = $("g-body");
+  const approveRow = $("g-approve-row");
+  approveRow.classList.toggle("hidden", !(active && active.stage === "proposed"));
+
+  if (active && active.stage !== "confirmed") {
+    const stageIdx = active.stage === "proposed" ? 2 : G_STAGES.indexOf(active.stage);
+    tl.classList.remove("hidden");
+    tl.innerHTML = G_STAGES.map((s, i) => {
+      const cls = i < stageIdx ? "done" : i === stageIdx ? "now" : "";
+      const label = (s === "decided" && active.stage === "proposed") ? "PROPOSED" : s.toUpperCase();
+      return `<span class="g-step ${cls}">${label}</span>`;
+    }).join(`<span class="g-arrow">→</span>`);
+  } else {
+    tl.classList.add("hidden");
+  }
+
+  const ev = (g.events ?? [])[0];
+  if (active && ev) {
+    body.innerHTML = `<b>${escapeHtml(ev.title)}</b> — ${escapeHtml(ev.detail)}`;
+  } else if (ev && (Date.now() / 1000 - ev.ts) < 3600) {
+    const t = new Date(ev.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    body.innerHTML = `<b>${ev.stage.toUpperCase()} ${t}</b> · ${escapeHtml(ev.title)} — ${escapeHtml(ev.detail)}`;
+  } else {
+    body.innerHTML = "Current risk: <b>none</b> · watching reserve forecast, " +
+      "voltage sag, charging path, and sensor health";
+  }
+  $("g-policy").textContent =
+    `auto: ${g.allowed_auto.join(" · ")}  |  approval: ${g.requires_approval.join(" · ")}`;
+}
+
+$("g-level-sel").addEventListener("change", async () => {
+  try {
+    await postJson("/api/guardian/level", { level: $("g-level-sel").value });
+    refreshGuardian(); refreshAudit();
+  } catch (e) { console.warn(e); }
+});
+$("g-approve").addEventListener("click", async () => {
+  try { await postJson("/api/guardian/approve", {}); refreshGuardian(); refreshAudit(); }
+  catch (e) { console.warn(e); }
+});
+$("g-dismiss").addEventListener("click", async () => {
+  try { await postJson("/api/guardian/dismiss", {}); refreshGuardian(); }
+  catch (e) { console.warn(e); }
+});
 
 /* ---- watchdog --------------------------------------------------------------- */
 
@@ -990,7 +1055,9 @@ refreshAudit();
 refreshTrip();
 refreshRuntime();
 refreshWatchdog();
+refreshGuardian();
 setInterval(refreshWatchdog, 30_000);
+setInterval(refreshGuardian, 10_000);
 setInterval(tick, REFRESH_LATEST_MS);
 setInterval(refreshInsight, REFRESH_INSIGHT_MS);
 setInterval(refreshSparks, REFRESH_HISTORY_MS);

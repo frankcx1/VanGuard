@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS patrols (   -- watchdog check reports (P7)
   duration_ms INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS guardian_events (  -- autonomy decision trail (P8)
+  id INTEGER PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  episode INTEGER NOT NULL,            -- groups one detect→confirm sequence
+  stage TEXT NOT NULL,                 -- detected|verified|decided|acted|confirmed|withheld|proposed|resolved|dismissed
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  data_json TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS commands (  -- human control commands (P5 demo);
   id INTEGER PRIMARY KEY,              -- the poller applies them to the source
   ts INTEGER NOT NULL,
@@ -166,6 +176,24 @@ class Store:
                 (source, metric, since),
             )
         return [(int(t), float(v)) for t, v in await cur.fetchall()]
+
+    async def add_guardian_event(self, episode: int, stage: str, title: str,
+                                 detail: str, data_json: str = "{}") -> int:
+        cur = await self._db.execute(
+            "INSERT INTO guardian_events (ts, episode, stage, title, detail, "
+            "data_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (int(time.time()), episode, stage, title, detail, data_json))
+        await self._db.commit()
+        return cur.lastrowid
+
+    async def guardian_events(self, limit: int = 40) -> list[dict]:
+        cur = await self._db.execute(
+            "SELECT ts, episode, stage, title, detail, data_json "
+            "FROM guardian_events ORDER BY id DESC LIMIT ?", (limit,))
+        import json as _json
+        return [{"ts": int(t), "episode": int(e), "stage": s, "title": ti,
+                 "detail": d, "data": _json.loads(dj or "{}")}
+                for t, e, s, ti, d, dj in await cur.fetchall()]
 
     async def add_patrol(self, status: str, summary: str, findings_json: str,
                          source: str, duration_ms: int) -> None:

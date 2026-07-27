@@ -40,6 +40,8 @@ class Scenario:
     drive_mph: float = 0.0
     hvac_mode: float = 0.0         # 0 off, 1 heat, 2 cool (initial)
     hvac_setpoint_c: float = 21.0
+    inverter_on: bool = False      # initial inverter switch state
+    network_mode: str = "off"      # off | cell | wifi | starlink (initial)
 
 
 PRESETS: dict[str, Scenario] = {
@@ -89,6 +91,16 @@ PRESETS: dict[str, Scenario] = {
         weather="clear", pv_peak_w=290.0, base_load_w=22.0,
         position=(47.6840, -122.1965),
     ),
+    # P8 Guardian demo: the overnight-reserve story. 31% at 23:00, no sun
+    # coming, Starlink dish and idle inverter quietly burning ~40W of
+    # nonessential load — the forecast breaches Camp reserve, Guardian
+    # sheds both, and the sunrise number recovers on camera.
+    "overnight_guardian": Scenario(
+        name="overnight_guardian", seed=808,
+        start_soc=31.0, start_hour=23.0, ambient_c=16.0,
+        weather="none", pv_peak_w=0.0, base_load_w=30.0,
+        inverter_on=True, network_mode="starlink",
+    ),
     # P5 demo: driving the Pacific Rim Hwy into Tofino — alternator charging
     # while moving, GPS tracking the route, trip keeper advising on what's
     # nearby. Parks in Tofino when the route ends (~45 min at 32 mph).
@@ -130,4 +142,9 @@ def build_model(scn: Scenario) -> tuple[VanModel, random.Random]:
                 setpoint_c=scn.hvac_setpoint_c)
     gps = GpsTrack(scn.seed, position=scn.position, route=scn.route,
                    speed_mph=scn.drive_mph)
-    return VanModel(scn, rng, loads, hvac=hvac, gps=gps), rng
+    model = VanModel(scn, rng, loads, hvac=hvac, gps=gps)
+    if scn.inverter_on:
+        model.inverter_on = True
+    if scn.network_mode != "off":
+        model.network.set_mode(scn.network_mode)
+    return model, rng

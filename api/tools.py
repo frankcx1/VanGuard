@@ -211,6 +211,15 @@ class ToolRunner:
             }
         return out
 
+    async def tool_get_guardian_log(self, limit: int = 8) -> dict:
+        """The autonomy decision trail — lets the model answer "why did you
+        do that?" from the record instead of confabulating a reason."""
+        events = await self.store.guardian_events(limit=max(1, min(20, int(limit))))
+        return {"events": [
+            {"time_ago_s": int(time.time()) - e["ts"], "stage": e["stage"],
+             "title": e["title"], "detail": e["detail"]}
+            for e in events]}
+
     async def tool_estimate_runtime(self, load_watts: float,
                                     duration_min: float | None = None) -> dict:
         load_watts = float(load_watts)
@@ -290,6 +299,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "name": "get_network",
         "description": "Connectivity: uplink (offline/5G/wifi/starlink), signal, latency, throughput, Starlink dish state/power.",
         "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "get_guardian_log",
+        "description": "Recent autonomous Guardian decisions: what was detected, what was done, the verified result. Use to answer why-did-you-do-that.",
+        "parameters": {"type": "object", "properties": {
+            "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+            "required": []}}},
     {"type": "function", "function": {
         "name": "estimate_runtime",
         "description": ("Runtime for a DC load from current SOC. Pass "

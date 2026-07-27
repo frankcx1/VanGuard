@@ -526,6 +526,8 @@ simulated and has a defined path to real hardware:
 | Voice | **fully real already** — Whisper base.en on OpenVINO (GPU), browser records raw PCM, zero cloud | maybe NPU serving; better mic at M4 kiosk |
 | Trip keeper | simulated GPS on a Tofino route; **offline curated POI dataset** | **USB GPS (u-blox NMEA, ~$15)** — M1 order; POI data stays offline by design (bigger regional dataset is a data problem, not code) |
 | Actuation rule | commands table: human-initiated, audited as HUMAN, sim-gated | phase 2 keeps the same queue + explicit confirmation |
+| Guardian autonomy (P8) | deterministic policy engine: autonomy ladder (observe→emergency), detect→verify→decide→act→confirm episodes, sim-only actions via the audited queue (device=GUARDIAN), withholds on low sensor confidence; LLM only explains via get_guardian_log | phase 2: same engine drives real adapters, action-by-action authorization; interlocks stay demo-grade until certified hardware protection exists |
+| **Chassis / front-of-van** (not built) | — | **OBD-II is the local path**: every 2022 Sprinter (VS30/907) has the port; a BLE/WiFi dongle + python-OBD reads standard PIDs (RPM, coolant, speed, chassis battery V, fuel level where supported, DTCs); DEF/oil level are Mercedes-proprietary UDS — best-effort. Cloud alternative exists (Mercedes-Benz Fleet API / Fleet Partner API, developer.mercedes-benz.com — OAuth, commercial) but violates no-cloud-at-runtime; consumer mbrace telematics was discontinued 2026-01-01. Add a simulated `chassis` source first, mirroring the pattern |
 
 ## 12. Ground rules (carried forward from the brief)
 

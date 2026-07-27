@@ -452,6 +452,47 @@ label, persistence forecasts); full fast regression green.
 
 ---
 
+## 2026-07-27 — P8: VanGuard Guardian — from monitoring to autonomy
+
+Built from the second external review (this one had actually read the
+system). The screen now visibly does the missing half: recognize risk,
+pick a policy-approved response, act, verify, explain.
+
+- `api/guardian.py`: **deterministic policy engine** — the LLM is never in
+  this loop. Autonomy ladder (observe/advise/ask/protect/emergency,
+  user-selected, default protect), action registry with permission classes
+  (auto / confirm / interlock; vehicle+BMS are the permanent never-class),
+  cooldowns, hysteresis (2 consecutive detections; interlocks act on 1),
+  episodes detected→verified→decided→acted→confirmed logged to
+  `guardian_events`. Actions go through the same sim-gated audited command
+  queue (device=GUARDIAN); live sources refuse. **Low sensor confidence
+  withholds autonomy** — knowing when not to act is a feature.
+- Detectors: overnight reserve breach (sheds Starlink + idle inverter,
+  proposes HVAC-off), voltage-sag interlock (<12V under >800W AC → stop
+  cooktop; demo interlock, not certified protection), alternator-gap
+  advisory (restraint: flags, never "repairs"), sensor-conflict withhold.
+- `get_guardian_log` tool + snapshot inclusion so "why did you turn those
+  off?" is answered from the record, not confabulated. First live run of
+  the full loop, unprompted: detected 1%-by-sunrise vs 20% policy → shed
+  dish + inverter (~42W) → **confirmed: drain 73W→30W, sunrise forecast
+  1%→17%** — and the NPU model explained it correctly on request.
+- UI: Guardian strip in the Ask panel (armed state, autonomy selector,
+  decision timeline, approve/dismiss for ask-level, policy line),
+  presentation badge is now **SIMULATED VAN · REAL LOCAL AI** (reviewer's
+  suggestion — disclosure as a flex), LIVE timestamp on power flow,
+  "verdict: deterministic rules · explanation: Qwen3-4B (NPU)" label,
+  standalone inverter tile folded into Power Flow, `overnight_guardian`
+  scenario, intentionally-off Starlink no longer reads as "stale".
+- Chassis research logged in PLAN §12.5: OBD-II dongle is the local path
+  for front-of-van telemetry; Mercedes Fleet API exists but is cloud.
+
+Verification: new `verify_p8.py` **20/20** (detectors, hysteresis, full
+protect episode with real queued commands + GUARDIAN audit rows +
+before/after confirmation, no episode spam, ask-level approval flow,
+observe-level restraint). Full regression green.
+
+---
+
 <!-- Template for subsequent entries:
 
 ## YYYY-MM-DD — Mx: <title>

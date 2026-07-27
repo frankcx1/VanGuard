@@ -48,7 +48,9 @@
   </section>
 
   <section class="tile wide flow-tile">
-    <div class="tile-head"><h2>Power flow</h2><span id="flow-recon" class="status plain"></span></div>
+    <div class="tile-head"><h2>Power flow</h2>
+      <span class="status plain"><span id="flow-live" class="live-ts"></span> <span id="flow-recon"></span></span>
+    </div>
     <div class="flow">
       <div class="flow-col" role="group" aria-label="Charge sources (click to switch, simulated)">
         <button class="flow-node src" data-src="solar">☀️ Solar<b id="f-solar">–</b></button>
@@ -140,14 +142,32 @@
       <button id="chat-send" type="submit">Ask</button>
     </form>
     <div id="chat-log" aria-live="polite"></div>
+
+    <div class="guardian" id="guardian" aria-live="polite">
+      <div class="g-head">
+        <span class="g-title">GUARDIAN</span>
+        <span id="g-armed" class="status plain">–</span>
+        <label class="g-level">autonomy
+          <select id="g-level-sel" aria-label="Autonomy level">
+            <option value="observe">Observe</option>
+            <option value="advise">Advise</option>
+            <option value="ask">Ask</option>
+            <option value="protect">Protect</option>
+            <option value="emergency">Emergency</option>
+          </select>
+        </label>
+      </div>
+      <div id="g-timeline" class="g-timeline hidden" aria-hidden="true"></div>
+      <div id="g-body" class="g-body">warming up…</div>
+      <div id="g-approve-row" class="g-approve hidden">
+        <button id="g-approve">Approve</button>
+        <button id="g-dismiss">Dismiss</button>
+      </div>
+      <div class="g-policy" id="g-policy"></div>
+    </div>
   </section>
 
   <div class="stack">
-    <section class="tile inverter-tile">
-      <div class="tile-head"><h2>Inverter</h2><span id="inv-state" class="status plain"></span></div>
-      <div class="big"><span id="inv-ac">–</span><span class="unit">W AC out</span></div>
-      <div class="row sub2"><span id="inv-detail">3000 W rated</span></div>
-    </section>
     <section class="tile net-tile">
       <div class="tile-head"><h2>Network</h2><span id="net-state" class="status plain">offline</span></div>
       <div class="net-row">

@@ -196,11 +196,19 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         if interval > 0:
             from api.watchdog import watchdog_loop
             wd_task = asyncio.create_task(watchdog_loop(app, interval))
+        from api.guardian import Guardian, guardian_loop
+        app.state.guardian = Guardian(app)
+        g_task = None
+        g_interval = float((cfg.get("guardian") or {}).get("interval_s", 30))
+        if g_interval > 0:
+            g_task = asyncio.create_task(guardian_loop(app, g_interval))
         try:
             yield
         finally:
             if wd_task is not None:
                 wd_task.cancel()
+            if g_task is not None:
+                g_task.cancel()
             await app.state.store.close()
 
     app = FastAPI(title="VanGuard", lifespan=lifespan)
@@ -324,6 +332,38 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             tool="ui_watchdog_run", args_json="{}", result_hash="-",
             device="HUMAN", duration_ms=0)
         return stamp({"patrol": await run_patrol(app)})
+
+    class LevelCommand(BaseModel):
+        level: Literal["observe", "advise", "ask", "protect", "emergency"]
+
+    @app.get("/api/guardian")
+    async def guardian_status():
+        return stamp(await app.state.guardian.status())
+
+    @app.post("/api/guardian/run")
+    async def guardian_run():
+        return stamp(await app.state.guardian.evaluate())
+
+    @app.post("/api/guardian/level")
+    async def guardian_level(body: LevelCommand):
+        await app.state.store.set_meta("autonomy_level", body.level)
+        await app.state.store.audit(
+            tool="ui_autonomy_level", args_json=json.dumps({"level": body.level}),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp(await app.state.guardian.status())
+
+    @app.post("/api/guardian/approve")
+    async def guardian_approve():
+        ok = await app.state.guardian.approve()
+        if ok:
+            await app.state.store.audit(
+                tool="ui_guardian_approve", args_json="{}", result_hash="-",
+                device="HUMAN", duration_ms=0)
+        return stamp({"approved": ok})
+
+    @app.post("/api/guardian/dismiss")
+    async def guardian_dismiss():
+        return stamp({"dismissed": await app.state.guardian.dismiss()})
 
     @app.get("/api/runtime")
     async def runtime():

@@ -50,7 +50,10 @@ def compute_insight(readings: dict, outlook: dict, cfg: dict,
 
     # -- staleness / data quality first: it gates trust in everything else --
     stale_sources = []
+    net_mode = _get(readings, "network", "mode")
     for source, per in (readings or {}).items():
+        if source == "starlink" and net_mode != 3.0:
+            continue    # dish is switched off — silence is expected, not stale
         if per and now - max(ts for ts, _ in per.values()) > 60:
             stale_sources.append(source)
     if stale_sources:
