@@ -227,6 +227,18 @@ class VanModel:
                 return False
             self.switches[source] = bool(cmd.get("enabled"))
             return True
+        if cmd.get("target") == "appliance":
+            # Known appliances only — an arbitrary-watts command would be an
+            # invitation to fabricate loads.
+            known = {"cooktop": (1500.0, True), "microwave": (1000.0, True)}
+            name = cmd.get("name")
+            if name not in known:
+                return False
+            if cmd.get("on"):
+                self.loads.appliances[name] = known[name]
+            else:
+                self.loads.appliances.pop(name, None)
+            return True
         if cmd.get("target") == "hvac" and self.hvac is not None:
             mode_map = {"off": 0.0, "heat": 1.0, "cool": 2.0}
             mode = mode_map.get(cmd.get("mode")) if "mode" in cmd else None

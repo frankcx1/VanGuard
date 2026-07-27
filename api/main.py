@@ -26,6 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from api.insight import compute_insight
+from api.outlook import compute_outlook
 from poller import derived
 from poller.config import load_config
 from poller.store import RAW_RETENTION_S, Store
@@ -52,6 +54,11 @@ class ChargeSourceCommand(BaseModel):
     enabled: bool
 
 
+class ApplianceCommand(BaseModel):
+    name: Literal["cooktop", "microwave"]
+    on: bool
+
+
 DEFAULT_ALERT_RULES = {
     "soc_warn_pct": 30.0,
     "soc_crit_pct": 15.0,
@@ -60,12 +67,35 @@ DEFAULT_ALERT_RULES = {
     "volt_crit": 11.8,
 }
 
+# Operating modes are policy data, not visual labels (review adoption).
+OPERATING_MODES = {
+    "camp":      {"reserve_pct": 20.0, "note": "normal comfort and appliance policies"},
+    "sleep":     {"reserve_pct": 30.0, "tte_warn_h": 8.0,
+                  "note": "stricter reserve, quiet hours, temperature watch"},
+    "drive":     {"reserve_pct": 20.0,
+                  "note": "expects alternator charge while moving"},
+    "storage":   {"reserve_pct": 50.0, "soc_warn_pct": 60.0,
+                  "note": "battery preservation thresholds"},
+    "emergency": {"reserve_pct": 10.0, "soc_warn_pct": 20.0, "soc_crit_pct": 10.0,
+                  "note": "protect comms, lighting, heat; run reserves down"},
+}
 
-def evaluate_alerts(readings: dict, overrides: dict, stale: bool) -> list[dict]:
+
+class ModeCommand(BaseModel):
+    mode: Literal["camp", "sleep", "drive", "storage", "emergency"]
+
+
+def evaluate_alerts(readings: dict, overrides: dict, stale: bool,
+                    outlook: dict | None = None) -> list[dict]:
+    """Severities: critical > warning > advisory > data-quality > info."""
     rules = {**DEFAULT_ALERT_RULES, **overrides}
     dv = derived.all_derived(readings)
     soc = readings.get("shunt", {}).get("soc_pct", (0, None))[1]
     volts = readings.get("shunt", {}).get("voltage_v", (0, None))[1]
+    i = readings.get("shunt", {}).get("current_a", (0, None))[1]
+    net = dv.get("net_power_w")
+    alt = readings.get("dcc50s", {}).get("alt_power_w", (0, 0.0))[1]
+    speed = readings.get("gps", {}).get("speed_mph", (0, None))[1]
     out = []
 
     def alert(aid, severity, message):
@@ -86,6 +116,23 @@ def evaluate_alerts(readings: dict, overrides: dict, stale: bool) -> list[dict]:
             alert("volts", "critical", f"voltage sagging: {volts:.2f}V")
         elif volts <= rules["volt_warn"]:
             alert("volts", "warning", f"voltage low: {volts:.2f}V")
+
+    # Advisory / data-quality (review adoption):
+    if soc is not None and soc >= 99.5 and (i or 0) > 0.5:
+        alert("soc-full-charging", "advisory",
+              "battery reports 100% while still accepting charge "
+              "(absorption/float or SOC rounding)")
+    if (speed or 0) > 5 and (alt or 0) < 25:
+        alert("alt-missing", "warning",
+              "moving with no alternator input - check DC-DC charging")
+    if i is not None and net is not None and i * net < -1.0:
+        alert("sensor-conflict", "data-quality",
+              "battery current and power disagree on direction")
+    if outlook and outlook.get("available") \
+            and not outlook.get("reserve_ok_overnight", True):
+        alert("reserve-forecast", "warning",
+              f"forecast {outlook['soc_at_sunrise_pct']:.0f}% by sunrise - "
+              "below reserve")
     return out
 
 
@@ -148,6 +195,8 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             "latest_sample_ts": newest,
             "staleness_s": None if newest is None else max(0, now - newest),
             "stale": newest is None or (now - newest) > STALE_AFTER_S,
+            "scenario": (cfg.get("sim") or {}).get("scenario"),
+            "mode": await _mode(),
         })
 
     @app.get("/api/telemetry/latest")
@@ -183,12 +232,79 @@ def create_app(cfg: dict | None = None) -> FastAPI:
 
     # -- P5 demo mode ----------------------------------------------------------
 
+    async def _mode() -> str:
+        return (await app.state.store.get_meta("operating_mode")) or "camp"
+
+    def _cfg_for_mode(mode: str) -> dict:
+        policy = OPERATING_MODES.get(mode, {})
+        merged = dict(cfg)
+        merged["power"] = {**(cfg.get("power") or {}),
+                           "reserve_pct": policy.get("reserve_pct", 20.0)}
+        merged["alerts"] = {**(cfg.get("alerts") or {}),
+                            **{k: v for k, v in policy.items()
+                               if k.endswith(("_pct", "_h")) and k != "reserve_pct"}}
+        return merged
+
+    async def _outlook(horizon_h: float | None = None) -> tuple[dict, dict, dict]:
+        readings = await app.state.store.latest()
+        pv_hist = await app.state.store.history("dcc50s", "pv_power_w", 24 * 3600)
+        mcfg = _cfg_for_mode(await _mode())
+        return readings, compute_outlook(readings, pv_hist, mcfg, horizon_h), mcfg
+
+    @app.get("/api/mode")
+    async def get_mode():
+        mode = await _mode()
+        return stamp({"mode": mode, "policy": OPERATING_MODES[mode],
+                      "modes": list(OPERATING_MODES)})
+
+    @app.post("/api/mode")
+    async def set_mode(body: ModeCommand):
+        await app.state.store.set_meta("operating_mode", body.mode)
+        await app.state.store.audit(
+            tool="ui_set_mode", args_json=json.dumps({"mode": body.mode}),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"mode": body.mode, "policy": OPERATING_MODES[body.mode]})
+
+    @app.get("/api/outlook")
+    async def outlook(horizon_h: float | None = Query(default=None, ge=0.5, le=72)):
+        _, out, _ = await _outlook(horizon_h)
+        return stamp(out)
+
+    @app.get("/api/insight")
+    async def insight():
+        readings, out, mcfg = await _outlook()
+        return stamp({"insight": compute_insight(readings, out, mcfg),
+                      "outlook": out,
+                      "mode": await _mode()})
+
+    @app.get("/api/runtime")
+    async def runtime():
+        # Honest runtime status: only what the loaded pipelines report.
+        engine = getattr(app.state, "engine", None)
+        stt = getattr(app.state, "stt", None)
+        model_dir = Path(__file__).resolve().parent.parent / cfg.get(
+            "inference", {}).get("model_dir", "ov_qwen3_4b_instruct_2507_int4_npu")
+        last = getattr(app.state, "last_gen", None)
+        return stamp({
+            "model_dir": model_dir.name,
+            "model_exported": (model_dir / "openvino_model.xml").exists(),
+            "loaded": engine is not None,
+            "device_requested": (cfg.get("inference", {})
+                                 .get("device_order", ["GPU", "NPU", "CPU"])),
+            "device_confirmed": engine.device if engine else None,
+            "load_s": engine.load_s if engine else None,
+            "last_generation": last,
+            "stt_loaded": stt is not None,
+            "stt_device": stt.device if stt else None,
+            "endpoint": "loopback only",
+        })
+
     @app.get("/api/alerts")
     async def alerts():
-        readings = await app.state.store.latest()
+        readings, out, mcfg = await _outlook()
         return stamp({"alerts": evaluate_alerts(
-            readings, cfg.get("alerts", {}),
-            (await status())["stale"])})
+            readings, mcfg.get("alerts", {}),
+            (await status())["stale"], outlook=out)})
 
     @app.post("/api/hvac")
     async def hvac(body: HvacCommand):
@@ -217,6 +333,17 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
         await app.state.store.audit(
             tool="ui_charge_source", args_json=json.dumps(payload),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"queued": cmd_id})
+
+    @app.post("/api/appliance")
+    async def appliance(body: ApplianceCommand):
+        if cfg["source"] != "sim":
+            raise HTTPException(403, "appliance control is a sim-only demo control")
+        payload = {"target": "appliance", **body.model_dump()}
+        cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
+        await app.state.store.audit(
+            tool="ui_appliance", args_json=json.dumps(payload),
             result_hash="-", device="HUMAN", duration_ms=0)
         return stamp({"queued": cmd_id})
 

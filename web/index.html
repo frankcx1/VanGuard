@@ -7,66 +7,66 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header>
+<header role="banner">
   <div class="brand">
     <h1>VanGuard</h1>
-    <span class="sub">Sprinter power · offline</span>
+    <span class="sub">Sprinter power</span>
   </div>
   <div class="chips">
-    <span id="sim-badge" class="badge sim hidden">⚠ SIM</span>
+    <span class="badge rail" id="net-badge">⛔ OFFLINE</span>
+    <span id="sim-badge" class="badge sim hidden">⚠ SIM DATA</span>
+    <span class="badge rail" id="ai-badge" title="Local inference status, reported by the loaded runtime - never assumed">LOCAL AI: …</span>
+    <span class="badge rail" id="privacy-badge"
+      title="No cloud endpoint is configured or required. Telemetry is generated and processed on this device. Nothing is transmitted externally - this is a design guarantee of the demo build, not a measured network audit.">🔒 DATA STAYS ON DEVICE</span>
+    <span class="badge rail" id="mic-badge">🎤 MIC READY</span>
+    <label class="badge rail mode-wrap">mode
+      <select id="mode-sel" aria-label="Operating mode">
+        <option value="camp">Camp</option>
+        <option value="sleep">Sleep</option>
+        <option value="drive">Drive</option>
+        <option value="storage">Storage</option>
+        <option value="emergency">Emergency</option>
+      </select>
+    </label>
     <span id="stale-chip" class="badge stale hidden">⚠ STALE</span>
     <span id="clock" class="badge quiet"></span>
   </div>
 </header>
 
-<div id="alert-banner" class="hidden"></div>
+<div id="alert-banner" class="hidden" role="alert"></div>
 
 <main class="grid">
   <section class="tile hero">
     <div class="tile-head"><h2>Battery</h2><span id="soc-status" class="status"></span></div>
     <div class="big"><span id="soc">–</span><span class="unit">%</span></div>
     <div class="row sub2">
-      <span id="tte-ttf">–</span>
+      <span id="volts">–</span><span id="amps">–</span><span id="batt-temp">–</span>
     </div>
+    <div class="row sub2"><span id="tte-ttf">–</span></div>
     <div class="spark" data-spark="soc"></div>
   </section>
 
-  <section class="tile">
-    <div class="tile-head"><h2>Voltage</h2></div>
-    <div class="big"><span id="volts">–</span><span class="unit">V</span></div>
-    <div class="row sub2"><span id="amps">–</span><span id="batt-temp">–</span></div>
-    <div class="spark" data-spark="volts"></div>
-  </section>
-
-  <section class="tile">
-    <div class="tile-head"><h2>Net power</h2><span id="flow-dir" class="status"></span></div>
-    <div class="big"><span id="net-w">–</span><span class="unit">W</span></div>
-    <div class="row sub2"><span>signed at the shunt · + is charging</span></div>
-    <div class="spark" data-spark="net"></div>
-  </section>
-
-  <section class="tile">
-    <div class="tile-head"><h2>Solar</h2></div>
-    <div class="big"><span id="pv-w">–</span><span class="unit">W</span></div>
-    <div class="row sub2"><span id="pv-yield">–</span></div>
-    <div class="spark" data-spark="pv"></div>
-  </section>
-
-  <section class="tile">
-    <div class="tile-head"><h2>DC load</h2></div>
-    <div class="big" id="load-big"><span id="load-w">–</span><span class="unit">W</span></div>
-    <div class="row sub2"><span id="load-note">derived: sources in − net battery power</span></div>
-  </section>
-
-  <section class="tile">
-    <div class="tile-head"><h2>Charging from</h2><span class="status plain">click to switch · sim</span></div>
-    <div class="big charge-src" id="charge-src">–</div>
-    <div class="src-toggles" role="group" aria-label="Charge sources">
-      <button data-src="solar">☀️ Solar<span class="src-w" id="w-solar">–</span></button>
-      <button data-src="alternator">🚐 Alternator<span class="src-w" id="w-alternator">–</span></button>
-      <button data-src="shore">🔌 Shore<span class="src-w" id="w-shore">–</span></button>
+  <section class="tile wide flow-tile">
+    <div class="tile-head"><h2>Power flow</h2><span id="flow-recon" class="status plain"></span></div>
+    <div class="flow">
+      <div class="flow-col" role="group" aria-label="Charge sources (click to switch, simulated)">
+        <button class="flow-node src" data-src="solar">☀️ Solar<b id="f-solar">–</b></button>
+        <button class="flow-node src" data-src="alternator">🚐 Alternator<b id="f-alt">–</b></button>
+        <button class="flow-node src" data-src="shore">🔌 Shore<b id="f-shore">–</b></button>
+      </div>
+      <div class="flow-arrow" id="arrow-in" aria-hidden="true">→</div>
+      <div class="flow-batt" id="flow-batt">
+        <div class="fb-net" id="f-net">–</div>
+        <div class="fb-label" id="f-net-label">battery</div>
+      </div>
+      <div class="flow-arrow" id="arrow-out" aria-hidden="true">→</div>
+      <div class="flow-col" aria-label="Loads">
+        <div class="flow-node"><span>🏠 House DC</span><b id="f-house">–</b></div>
+        <div class="flow-node"><span>⚡ AC · <span id="f-inv-state">idle</span></span><b id="f-ac">–</b></div>
+        <button class="flow-node src" id="cooktop-btn" aria-pressed="false">🍳 Cooktop <b id="f-cook">off · sim</b></button>
+      </div>
     </div>
-    <div class="row sub2"><span id="charge-detail">–</span></div>
+    <div class="spark" data-spark="net"></div>
   </section>
 
   <section class="tile">
@@ -83,6 +83,28 @@
     <div class="row sub2"><span id="hvac-note">sim control · live control is phase 2</span></div>
   </section>
 
+  <section class="tile wide insight-tile">
+    <div class="tile-head"><h2>VanGuard Insight</h2>
+      <span class="status plain" id="insight-prov">deterministic rules</span>
+    </div>
+    <p id="insight-summary" aria-live="polite">–</p>
+    <p id="insight-reco" class="reco hidden"></p>
+    <div id="insight-quality" class="quality"></div>
+    <div class="insight-actions">
+      <button id="ins-explain">Explain</button>
+      <button id="ins-changed">What changed?</button>
+      <button id="ins-speak">🔊 Read aloud</button>
+      <button id="ins-action" class="hidden action"></button>
+      <button id="ins-dismiss">Dismiss</button>
+    </div>
+  </section>
+
+  <section class="tile">
+    <div class="tile-head"><h2>Power outlook</h2><span id="ol-conf" class="status plain"></span></div>
+    <dl class="outlook" id="outlook-list"></dl>
+    <details class="assumptions"><summary>assumptions</summary><div id="ol-assumptions"></div></details>
+  </section>
+
   <section class="tile">
     <div class="tile-head"><h2>Trip</h2><span id="trip-state" class="status plain"></span></div>
     <div class="big"><span id="trip-mi">–</span><span class="unit">mi today</span></div>
@@ -90,23 +112,18 @@
     <ul id="poi-list"></ul>
   </section>
 
-  <section class="tile scrolly">
-    <div class="tile-head"><h2>All readings</h2>
-      <span class="status plain"><span class="val-ok">●</span> fresh · <span class="val-warn">●</span> aging · <span class="val-bad">●</span> offline</span>
-    </div>
-    <div class="table-wrap">
-      <table id="readings-table" aria-label="Latest raw readings">
-        <thead><tr><th>device</th><th>metric</th><th class="num">value</th><th>age</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </section>
-
   <section class="tile wide chat-tile">
     <div class="tile-head"><h2>Ask VanGuard</h2><span id="chat-meta" class="status plain"></span></div>
+    <div class="chips-row" id="chat-chips">
+      <button data-q="Can I run the cooktop for 25 minutes?">cooktop 25 min?</button>
+      <button data-q="Will I have enough power until sunrise?">power until sunrise?</button>
+      <button data-q="Why is the battery charging when it says 100%?">why charging at 100%?</button>
+      <button data-q="What should we do nearby?">what's nearby?</button>
+      <button data-q="Is anything abnormal?">anything abnormal?</button>
+    </div>
     <form id="chat-form">
       <input id="chat-input" type="text" autocomplete="off"
-             placeholder="Can I run the cooktop for 25 minutes?">
+             placeholder="Ask about power, climate, or the trip…">
       <button id="chat-mic" type="button" title="Hold to talk (offline Whisper)">🎤</button>
       <button id="chat-send" type="submit">Ask</button>
     </form>
@@ -119,22 +136,40 @@
       <div class="big"><span id="inv-ac">–</span><span class="unit">W AC out</span></div>
       <div class="row sub2"><span id="inv-detail">3000 W rated</span></div>
     </section>
-
     <section class="tile scrolly">
-      <div class="tile-head"><h2>Tool audit</h2><span class="status plain">read-only</span></div>
-      <div class="table-wrap">
-        <table id="audit-table" aria-label="Tool invocation audit log">
-          <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+      <div class="tile-head"><h2>Alerts</h2><span id="alert-count" class="status plain"></span></div>
+      <ul id="alert-list"></ul>
     </section>
   </div>
+
+  <section class="tile diag-tile">
+    <div class="tile-head"><h2>Diagnostics</h2></div>
+    <p id="diag-summary" class="diag-summary">–</p>
+    <p class="row sub2"><span id="diag-runtime">–</span></p>
+    <button id="diag-open">Open diagnostics</button>
+  </section>
 </main>
 
-<footer>
-  <span id="src-line">–</span>
-</footer>
+<footer><span id="src-line">–</span></footer>
+
+<div id="drawer" class="drawer hidden" role="dialog" aria-label="Diagnostics" aria-modal="true">
+  <div class="drawer-head">
+    <h2>Diagnostics</h2>
+    <button id="drawer-close" aria-label="Close diagnostics">✕ close</button>
+  </div>
+  <h3>AI runtime <span class="status plain">(reported by the loaded runtime, never assumed)</span></h3>
+  <div id="runtime-detail" class="runtime"></div>
+  <h3>All readings <span class="status plain"><span class="val-ok">●</span> fresh · <span class="val-warn">●</span> aging · <span class="val-bad">●</span> offline · click a device to toggle it (sim)</span></h3>
+  <table id="readings-table" aria-label="Latest raw readings">
+    <thead><tr><th>device</th><th>metric</th><th class="num">value</th><th>age</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <h3>Tool audit <span class="status plain">sees everything · touches nothing</span></h3>
+  <table id="audit-table" aria-label="Tool invocation audit log">
+    <thead><tr><th>time</th><th>tool</th><th>args</th><th>device</th><th class="num">ms</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
 
 <div id="tooltip" class="tooltip hidden"></div>
 <script src="/static/app.js"></script>

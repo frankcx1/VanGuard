@@ -112,6 +112,8 @@ class LoadBank:
     pump: WaterPump | None
     events: list[LoadEvent] = field(default_factory=list)
     last_ac_w: float = 0.0
+    # Human-toggled appliances (P6 demo): name → (watts, is_ac).
+    appliances: dict = field(default_factory=dict)
 
     def step(self, dt_s: float, sim_h: float, clock_h: float) -> float:
         w = self.base_w + self.rng.uniform(-0.5, 0.5)
@@ -125,4 +127,8 @@ class LoadBank:
             w += dc
             if ev.ac and dc > 0:
                 self.last_ac_w += ev.watts
+        for watts, is_ac in self.appliances.values():
+            w += ac_to_dc_watts(watts) if is_ac else watts
+            if is_ac:
+                self.last_ac_w += watts
         return max(0.0, w)

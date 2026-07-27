@@ -134,35 +134,79 @@ async def _snapshot(runner: ToolRunner, device: str, trace: list) -> str:
     return json.dumps(parts, separators=(",", ":"))
 
 
+def _provenance(trace: list[dict], device: str | None) -> str:
+    """Compact, honest label for where the answer came from."""
+    real_tools = [t["tool"] for t in trace if not t.get("auto")]
+    if device is None:
+        return "deterministic demo engine · no model active"
+    if any(t == "estimate_runtime" for t in real_tools):
+        return f"calculation + local model ({device})"
+    if real_tools:
+        return f"local tools + local model ({device})"
+    return f"local model ({device}) on audited snapshot"
+
+
 @router.post("/v1/chat/completions")
 async def chat_completions(body: ChatRequest, request: Request):
-    engine, tokenizer = await get_engine(request)
     runner = ToolRunner(request.app.state.store)
     simulated = request.app.state.simulated
-
     t_start = time.perf_counter()
+
+    try:
+        engine, tokenizer = await get_engine(request)
+    except HTTPException:
+        # LOCAL MODEL UNAVAILABLE — USING DETERMINISTIC DEMO ENGINE.
+        # Same audited tools, template prose, honestly labeled.
+        from api.deterministic import respond
+        from api.insight import compute_insight
+        from api.outlook import compute_outlook
+        store = request.app.state.store
+        readings = await store.latest()
+        pv_hist = await store.history("dcc50s", "pv_power_w", 24 * 3600)
+        outlook = compute_outlook(readings, pv_hist, request.app.state.cfg)
+        insight = compute_insight(readings, outlook, request.app.state.cfg)
+        question = body.messages[-1].content if body.messages else ""
+        text, trace = await respond(question, runner, insight, outlook)
+        return _response(text, trace, simulated, device=None, rounds=0,
+                         tokens_per_s=None, ttft_ms=None,
+                         total_ms=int((time.perf_counter() - t_start) * 1000),
+                         model_name="deterministic")
+
     final_text, trace, gen, rounds = await _run_loop(
         body, request, engine, tokenizer, runner, SYSTEM_PROMPT)
     total_ms = int((time.perf_counter() - t_start) * 1000)
+    request.app.state.last_gen = {
+        "device": engine.device,
+        "tokens_per_s": round(gen.tokens_per_s, 1),
+        "ttft_ms": round(gen.ttft_ms),
+        "ts": int(time.time()),
+    }
+    return _response(final_text, trace, simulated, engine.device, rounds,
+                     round(gen.tokens_per_s, 1), round(gen.ttft_ms), total_ms,
+                     Path(engine.model_dir).name)
 
+
+def _response(text, trace, simulated, device, rounds, tokens_per_s, ttft_ms,
+              total_ms, model_name):
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
         "object": "chat.completion",
         "created": int(time.time()),
-        "model": f"vanguard/{Path(engine.model_dir).name}",
+        "model": f"vanguard/{model_name}",
         "choices": [{
             "index": 0,
-            "message": {"role": "assistant", "content": final_text},
+            "message": {"role": "assistant", "content": text},
             "finish_reason": "stop",
         }],
         "usage": {"total_time_ms": total_ms},
         "vanguard": {
             "simulated": simulated,
-            "device": engine.device,
-            "tokens_per_s": round(gen.tokens_per_s, 1),
-            "ttft_ms": round(gen.ttft_ms),
+            "device": device,
+            "tokens_per_s": tokens_per_s,
+            "ttft_ms": ttft_ms,
             "tool_calls": trace,
             "rounds": rounds,
+            "provenance": _provenance(trace, device),
         },
     }
 

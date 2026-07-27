@@ -157,6 +157,16 @@ class Store:
             )
         return [(int(t), float(v)) for t, v in await cur.fetchall()]
 
+    async def get_meta(self, key: str) -> str | None:
+        cur = await self._db.execute("SELECT value FROM meta WHERE key=?", (key,))
+        row = await cur.fetchone()
+        return row[0] if row else None
+
+    async def set_meta(self, key: str, value: str) -> None:
+        await self._db.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+        await self._db.commit()
+
     # -- control commands (P5 demo; poller applies, sim-only) --------------------
 
     async def enqueue_command(self, payload_json: str) -> int:

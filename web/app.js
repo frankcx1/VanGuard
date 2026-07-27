@@ -2,20 +2,17 @@
 "use strict";
 
 const REFRESH_LATEST_MS = 5_000;
+const REFRESH_INSIGHT_MS = 10_000;
 const REFRESH_HISTORY_MS = 60_000;
 const HISTORY_WINDOW_S = 24 * 3600;
 
-/* Each sparkline: fixed entity color, one series, hover crosshair+tooltip. */
 const SPARKS = {
-  soc:   { source: "shunt",  metric: "soc_pct",    color: "var(--c-soc)",   fmt: v => `${v.toFixed(0)}%` },
-  volts: { source: "shunt",  metric: "voltage_v",  color: "var(--c-volts)", fmt: v => `${v.toFixed(2)} V` },
-  net:   { source: "shunt",  metric: "power_w",    color: "var(--c-net)",   fmt: v => `${v.toFixed(0)} W` },
-  pv:    { source: "dcc50s", metric: "pv_power_w", color: "var(--c-solar)", fmt: v => `${v.toFixed(0)} W` },
+  soc: { source: "shunt", metric: "soc_pct", color: "var(--c-soc)", fmt: v => `${v.toFixed(0)}%` },
+  net: { source: "shunt", metric: "power_w", color: "var(--c-net)", fmt: v => `${v.toFixed(0)} W` },
 };
 
 const $ = id => document.getElementById(id);
 const tooltip = $("tooltip");
-
 const cToF = c => c * 9 / 5 + 32;
 const fToC = f => (f - 32) * 5 / 9;
 
@@ -34,23 +31,41 @@ function get(readings, source, metric) {
   const m = readings?.[source]?.[metric];
   return m ? m.value : null;
 }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+async function postJson(url, body) {
+  const r = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+  return r.json();
+}
 
 /* ---- latest readings → tiles ---------------------------------------------- */
 
-async function refreshLatest() {
-  const r = await fetch("/api/telemetry/latest");
-  const data = await r.json();
-  const rd = data.readings, dv = data.derived;
+let lastReadings = null;
 
-  // Integrity guardrail: badge is driven by the payload stamp, nothing else.
+async function refreshLatest() {
+  const data = await (await fetch("/api/telemetry/latest")).json();
+  const rd = data.readings, dv = data.derived;
+  lastReadings = rd;
+
   $("sim-badge").classList.toggle("hidden", data.simulated !== true);
   $("src-line").textContent =
-    `source: ${data.source_kind}` + (data.simulated ? " · SIMULATED DATA" : " · live van data");
+    `source: ${data.source_kind}` + (data.simulated ? " · SIMULATED DATA — no van hardware connected" : " · live van data");
 
   const soc = get(rd, "shunt", "soc_pct");
   $("soc").textContent = soc == null ? "–" : soc.toFixed(0);
   setSocStatus(soc);
-
+  const v = get(rd, "shunt", "voltage_v");
+  $("volts").textContent = v == null ? "–" : `${v.toFixed(2)} V`;
+  const i = get(rd, "shunt", "current_a");
+  $("amps").textContent = i == null ? "–" : `${i > 0 ? "+" : ""}${i.toFixed(1)} A`;
+  const bt = get(rd, "shunt", "temp_c");
+  $("batt-temp").textContent = bt == null ? "–" : `${cToF(bt).toFixed(0)} °F`;
   const tte = fmtHours(dv?.time_to_empty_h);
   const ttf = fmtHours(dv?.time_to_full_h);
   $("tte-ttf").textContent =
@@ -58,32 +73,122 @@ async function refreshLatest() {
     : ttf ? `≈ ${ttf} to full at current charge`
     : "holding steady";
 
-  const v = get(rd, "shunt", "voltage_v");
-  $("volts").textContent = v == null ? "–" : v.toFixed(2);
-  const i = get(rd, "shunt", "current_a");
-  $("amps").textContent = i == null ? "–" : `${i > 0 ? "+" : ""}${i.toFixed(1)} A`;
-  const bt = get(rd, "shunt", "temp_c");
-  $("batt-temp").textContent = bt == null ? "–" : `${cToF(bt).toFixed(0)} °F`;
-
-  const net = get(rd, "shunt", "power_w");
-  $("net-w").textContent = net == null ? "–" : Math.abs(net).toFixed(0);
-  const dir = $("flow-dir");
-  if (net == null) { dir.textContent = ""; }
-  else if (net > 5)  { dir.textContent = "▲ charging";    dir.className = "status good"; }
-  else if (net < -5) { dir.textContent = "▼ discharging"; dir.className = "status plain"; }
-  else               { dir.textContent = "· idle";        dir.className = "status plain"; }
-
-  const pv = get(rd, "dcc50s", "pv_power_w");
-  $("pv-w").textContent = pv == null ? "–" : pv.toFixed(0);
-  const yld = dv?.solar_yield_wh_today;
-  $("pv-yield").textContent = yld == null ? "–" : `${yld.toFixed(0)} Wh today`;
-
-  setLoadTile(dv);
-  setChargeTile(dv?.charge_source, rd);
+  setFlowPanel(rd, dv);
   setClimateTile(rd);
   setInverterTile(rd);
   fillTable(rd, data.server_ts);
+  updateDiagSummary(rd, data.server_ts);
 }
+
+function setSocStatus(soc) {
+  const el = $("soc-status");
+  if (soc == null) { el.textContent = ""; return; }
+  if (soc >= 50)      { el.textContent = "✓ OK";        el.className = "status good"; }
+  else if (soc >= 30) { el.textContent = "⚠ LOW";       el.className = "status warn"; }
+  else if (soc >= 15) { el.textContent = "⚠ VERY LOW";  el.className = "status serious"; }
+  else                { el.textContent = "✖ CRITICAL";  el.className = "status critical"; }
+}
+
+/* ---- power flow panel ------------------------------------------------------- */
+
+function setFlowPanel(rd, dv) {
+  const cs = dv?.charge_source ?? { solar_w: 0, alternator_w: 0, sources: [] };
+  const ctl = rd?.charge_ctl;
+  const states = {
+    solar: ctl?.solar_on?.value === 1,
+    alternator: ctl?.alternator_on?.value === 1,
+    shore: ctl?.shore_on?.value === 1,
+  };
+  $("f-solar").textContent = `${cs.solar_w} W`;
+  $("f-alt").textContent = `${cs.alternator_w} W`;
+  $("f-shore").textContent = states.shore ? "on · inferred" : "off";
+  document.querySelectorAll(".flow-node.src[data-src]").forEach(b => {
+    b.classList.toggle("on", states[b.dataset.src]);
+    b.dataset.on = states[b.dataset.src] ? "1" : "0";
+    b.setAttribute("aria-pressed", states[b.dataset.src] ? "true" : "false");
+  });
+
+  const net = dv?.net_power_w;
+  const fb = $("f-net");
+  fb.textContent = net == null ? "–" : `${net > 0 ? "+" : ""}${net.toFixed(0)} W`;
+  fb.classList.toggle("charging", (net ?? 0) > 5);
+  $("f-net-label").textContent =
+    net == null ? "battery" : net > 5 ? "▲ into battery" : net < -5 ? "▼ from battery" : "battery · idle";
+
+  const invDc = get(rd, "inverter", "dc_in_w") ?? 0;
+  const invAc = get(rd, "inverter", "ac_out_w") ?? 0;
+  const invState = get(rd, "inverter", "state");
+  const load = dv?.load_w;
+  const house = load == null ? null : Math.max(0, load - (invAc > 0 ? invDc : 0));
+  $("f-house").textContent = load == null ? "n/a on shore" : `${house.toFixed(0)} W`;
+  $("f-ac").textContent = `${invAc.toFixed(0)} W`;
+  $("f-inv-state").textContent =
+    ({ 0: "off", 1: "idle", 2: "inverting", 3: "BYPASS" })[invState] ?? "–";
+
+  const inW = cs.solar_w + cs.alternator_w;
+  $("arrow-in").classList.toggle("active", inW > 10 || states.shore);
+  $("arrow-out").classList.toggle("active", (load ?? 0) > 5);
+  if (load != null && net != null) {
+    $("flow-recon").textContent =
+      `${inW} W in − ${load.toFixed(0)} W out ≈ ${net > 0 ? "+" : ""}${net.toFixed(0)} W battery`;
+  } else {
+    $("flow-recon").textContent = states.shore ? "shore charging · load underivable" : "";
+  }
+
+  const cook = rd?.__cooktop_on ?? ((invAc > 1200) ? true : false);
+  $("f-cook").textContent = cook ? "ON · sim" : "off · sim";
+  $("cooktop-btn").classList.toggle("on", cook);
+  $("cooktop-btn").dataset.on = cook ? "1" : "0";
+  $("cooktop-btn").setAttribute("aria-pressed", cook ? "true" : "false");
+}
+
+document.querySelectorAll(".flow-node.src[data-src]").forEach(btn =>
+  btn.addEventListener("click", async () => {
+    const enabled = btn.dataset.on !== "1";
+    try {
+      await postJson("/api/charge_source", { source: btn.dataset.src, enabled });
+      refreshAudit();
+    } catch (e) { $("flow-recon").textContent = String(e.message); }
+  }));
+
+$("cooktop-btn").addEventListener("click", async () => {
+  const on = $("cooktop-btn").dataset.on !== "1";
+  if (on && !window.confirm("Simulate turning the cooktop ON (1500 W AC)?")) return;
+  try {
+    await postJson("/api/appliance", { name: "cooktop", on });
+    refreshAudit();
+  } catch (e) { $("flow-recon").textContent = String(e.message); }
+});
+
+/* ---- climate ---------------------------------------------------------------- */
+
+function setClimateTile(rd) {
+  const hv = rd?.hvac;
+  if (!hv) return;
+  $("cabin-temp").textContent =
+    hv.cabin_temp_c ? cToF(hv.cabin_temp_c.value).toFixed(1) : "–";
+  const mode = { 0: "off", 1: "heat", 2: "cool" }[hv.mode?.value] ?? "off";
+  const running = (hv.hvac_power_w?.value ?? 0) > 1;
+  $("hvac-state").textContent = mode === "off" ? "" :
+    `${mode} → ${cToF(hv.setpoint_c?.value).toFixed(0)}°F${running ? " · running" : " · idle"}`;
+  document.querySelectorAll(".seg button").forEach(b =>
+    b.classList.toggle("active", b.dataset.mode === mode));
+}
+
+document.querySelectorAll(".seg button").forEach(btn =>
+  btn.addEventListener("click", () => sendHvac({ mode: btn.dataset.mode })));
+$("setpoint").addEventListener("change", () =>
+  sendHvac({ setpoint_c: Math.round(fToC(parseFloat($("setpoint").value)) * 2) / 2 }));
+
+async function sendHvac(cmd) {
+  try {
+    await postJson("/api/hvac", cmd);
+    $("hvac-note").textContent = "command queued · applies within one poll · SIMULATED";
+    refreshAudit();
+  } catch (e) { $("hvac-note").textContent = String(e.message); }
+}
+
+/* ---- inverter ----------------------------------------------------------------- */
 
 const INV_STATES = {
   0: ["off", "status plain"],
@@ -110,139 +215,193 @@ function setInverterTile(rd) {
     `${(inv.dc_in_w?.value ?? 0).toFixed(0)} W DC in`;
 }
 
-const SRC_ICONS = { "solar": "☀️ Solar", "alternator": "🚐 Alternator", "shore (inferred)": "🔌 Shore (inferred)" };
+/* ---- insight + outlook ---------------------------------------------------------- */
 
-function setChargeTile(cs, rd) {
-  const el = $("charge-src"), det = $("charge-detail");
-  if (!cs) { el.textContent = "–"; return; }
-  if (cs.sources.length) {
-    el.textContent = cs.sources.map(s => SRC_ICONS[s] ?? s).join(" + ");
-  } else {
-    el.textContent = cs.charging ? "unknown source" : "not charging";
+let currentInsight = null;
+let dismissedSummary = null;
+
+async function refreshInsight() {
+  const data = await (await fetch("/api/insight")).json();
+  const ins = data.insight, ol = data.outlook;
+  currentInsight = ins;
+
+  if (dismissedSummary !== ins.summary) {
+    $("insight-summary").textContent = ins.summary;
+    const reco = $("insight-reco");
+    reco.classList.toggle("hidden", !ins.recommendation);
+    reco.textContent = ins.recommendation ?? "";
+    $("insight-quality").innerHTML = (ins.data_quality ?? [])
+      .map(q => `◆ ${escapeHtml(q)}`).join("<br>");
+    const act = $("ins-action");
+    if (ins.proposed_action) {
+      act.textContent = ins.proposed_action.label;
+      act.classList.remove("hidden");
+    } else {
+      act.classList.add("hidden");
+    }
   }
 
-  // Switch positions come from the sim's control state; watts from telemetry.
-  const ctl = rd?.charge_ctl;
-  const states = {
-    solar: ctl?.solar_on?.value === 1,
-    alternator: ctl?.alternator_on?.value === 1,
-    shore: ctl?.shore_on?.value === 1,
-  };
-  $("w-solar").textContent = `${cs.solar_w} W`;
-  $("w-alternator").textContent = `${cs.alternator_w} W`;
-  // Shore wattage is genuinely unmeasurable (charger is CAN-only): show
-  // state, never a made-up number.
-  $("w-shore").textContent = states.shore ? "on · inferred" : "off";
-  document.querySelectorAll(".src-toggles button").forEach(b => {
-    b.classList.toggle("on", states[b.dataset.src]);
-    b.dataset.on = states[b.dataset.src] ? "1" : "0";
-  });
-  det.textContent = states.shore
-    ? "shore charging is inferred - the charger is invisible to telemetry"
-    : `solar ${cs.solar_w} W · alternator ${cs.alternator_w} W`;
+  const list = $("outlook-list");
+  if (!ol.available) {
+    list.innerHTML = `<dt>forecast</dt><dd>${escapeHtml(ol.reason ?? "unavailable")}</dd>`;
+    $("ol-conf").textContent = "";
+    return;
+  }
+  const rows = [];
+  const row = (k, v, cls = "") => rows.push(`<dt>${k}</dt><dd class="${cls}">${v}</dd>`);
+  if (ol.runtime_to_reserve_h != null)
+    row("to reserve at current draw", `${ol.runtime_to_reserve_h} h`);
+  row("SOC at sunrise", `${ol.soc_at_sunrise_pct}%`,
+      ol.reserve_ok_overnight ? "good" : "bad");
+  row("hours to sunrise", `${ol.hours_to_sunrise} h`);
+  row("solar left today (est.)", `${ol.remaining_solar_wh} Wh`);
+  row("discretionary energy", `${ol.discretionary_wh} Wh`);
+  if (ol.solar_surplus_w != null)
+    row("solar surplus now", `${ol.solar_surplus_w} W`, ol.solar_surplus_w >= 0 ? "good" : "");
+  list.innerHTML = rows.join("");
+  const conf = $("ol-conf");
+  conf.textContent = `${ol.confidence} confidence · simulated`;
+  conf.className = "status " + ({ high: "good", medium: "plain", low: "serious" }[ol.confidence] ?? "plain");
+  const a = ol.assumptions;
+  $("ol-assumptions").textContent =
+    `capacity ${a.capacity_wh} Wh · reserve ${a.reserve_pct}% · ` +
+    `load basis ${a.load_basis_w} W · ${a.solar_model}`;
 }
 
-document.querySelectorAll(".src-toggles button").forEach(btn =>
-  btn.addEventListener("click", async () => {
-    const enabled = btn.dataset.on !== "1";
-    try {
-      const r = await fetch("/api/charge_source", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: btn.dataset.src, enabled }),
-      });
-      if (!r.ok) $("charge-detail").textContent = (await r.json()).detail ?? "refused";
-      refreshAudit();
-    } catch { $("charge-detail").textContent = "API unreachable"; }
-  }));
-
-function setClimateTile(rd) {
-  const hv = rd?.hvac;
-  if (!hv) return;
-  $("cabin-temp").textContent =
-    hv.cabin_temp_c ? cToF(hv.cabin_temp_c.value).toFixed(1) : "–";
-  const mode = { 0: "off", 1: "heat", 2: "cool" }[hv.mode?.value] ?? "off";
-  const running = (hv.hvac_power_w?.value ?? 0) > 1;
-  $("hvac-state").textContent = mode === "off" ? "" :
-    `${mode} → ${cToF(hv.setpoint_c?.value).toFixed(0)}°F${running ? " · running" : " · idle"}`;
-  document.querySelectorAll(".seg button").forEach(b =>
-    b.classList.toggle("active", b.dataset.mode === mode));
-}
-
-document.querySelectorAll(".seg button").forEach(btn =>
-  btn.addEventListener("click", () => sendHvac({ mode: btn.dataset.mode })));
-$("setpoint").addEventListener("change", () =>
-  sendHvac({ setpoint_c: Math.round(fToC(parseFloat($("setpoint").value)) * 2) / 2 }));
-
-async function sendHvac(cmd) {
+$("ins-dismiss").addEventListener("click", () => {
+  dismissedSummary = currentInsight?.summary;
+  $("insight-summary").textContent = "Dismissed until conditions change.";
+  $("insight-reco").classList.add("hidden");
+  $("insight-quality").innerHTML = "";
+  $("ins-action").classList.add("hidden");
+});
+$("ins-explain").addEventListener("click", () => {
+  if (currentInsight) sendChat("Explain this and your recommendation: " + currentInsight.summary);
+});
+$("ins-changed").addEventListener("click", () => sendChat("What changed in the last hour?"));
+$("ins-speak").addEventListener("click", () => {
+  if (!currentInsight) return;
+  const text = currentInsight.summary +
+    (currentInsight.recommendation ? " " + currentInsight.recommendation : "");
+  if ("speechSynthesis" in window) {
+    speechSynthesis.cancel();
+    speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+  }
+});
+$("ins-action").addEventListener("click", async () => {
+  const act = currentInsight?.proposed_action;
+  if (!act) return;
+  if (!window.confirm(`${act.label}? (SIMULATED - no real hardware is touched)`)) return;
+  const cmd = act.command;
   try {
-    const r = await fetch("/api/hvac", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cmd),
-    });
-    if (!r.ok) $("hvac-note").textContent = (await r.json()).detail ?? "refused";
-    else $("hvac-note").textContent = "command queued · applies within one poll";
+    if (cmd.target === "hvac") await postJson("/api/hvac",
+      { mode: cmd.mode, setpoint_c: cmd.setpoint_c });
     refreshAudit();
-  } catch { $("hvac-note").textContent = "API unreachable"; }
+  } catch (e) { $("insight-quality").textContent = String(e.message); }
+});
+
+/* ---- status rail ----------------------------------------------------------------- */
+
+async function refreshStatus() {
+  const s = await (await fetch("/api/status")).json();
+  const chip = $("stale-chip");
+  chip.classList.toggle("hidden", !s.stale);
+  if (s.stale) chip.textContent = `⚠ STALE ${fmtAge(s.staleness_s)}`;
+  $("clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (s.mode && $("mode-sel").value !== s.mode) $("mode-sel").value = s.mode;
 }
+
+async function refreshRuntime() {
+  const r = await (await fetch("/api/runtime")).json();
+  const badge = $("ai-badge");
+  if (r.loaded) {
+    badge.textContent = `LOCAL AI: ${r.device_confirmed}`;
+    badge.className = "badge rail good";
+  } else if (r.model_exported) {
+    badge.textContent = "LOCAL AI: READY (loads on first ask)";
+    badge.className = "badge rail";
+  } else {
+    badge.textContent = "DETERMINISTIC MODE — NO MODEL";
+    badge.className = "badge rail warn";
+  }
+  const lg = r.last_generation;
+  $("runtime-detail").innerHTML = [
+    `model: <b>${escapeHtml(r.model_dir)}</b> · exported: <b>${r.model_exported}</b>`,
+    `runtime: OpenVINO GenAI · endpoint: <b>${escapeHtml(r.endpoint)}</b>`,
+    `device requested: <b>${escapeHtml((r.device_requested ?? []).join(" → "))}</b>`,
+    `device confirmed: <b>${r.device_confirmed ?? "not loaded yet"}</b>` +
+      (r.load_s ? ` · load/compile <b>${r.load_s.toFixed(1)}s</b>` : ""),
+    lg ? `last generation: <b>${lg.device}</b> · <b>${lg.tokens_per_s}</b> tok/s · TTFT <b>${lg.ttft_ms}ms</b>`
+       : "last generation: none this session",
+    `speech-to-text: <b>${r.stt_loaded ? "Whisper on " + r.stt_device : "loads on first use"}</b>`,
+  ].map(l => `<div>${l}</div>`).join("");
+  $("diag-runtime").textContent = r.loaded
+    ? `AI on ${r.device_confirmed} (measured)` : (r.model_exported
+      ? "AI ready · not loaded yet" : "deterministic mode");
+}
+
+$("mode-sel").addEventListener("change", async () => {
+  try {
+    const r = await postJson("/api/mode", { mode: $("mode-sel").value });
+    $("diag-summary").title = r.policy.note;
+    refreshInsight(); refreshAlerts(); refreshAudit();
+  } catch (e) { console.warn(e); }
+});
+
+/* ---- alerts ------------------------------------------------------------------------ */
+
+async function refreshAlerts() {
+  const { alerts } = await (await fetch("/api/alerts")).json();
+  const banner = $("alert-banner");
+  const urgent = (alerts ?? []).filter(a => ["critical", "warning"].includes(a.severity));
+  if (urgent.length === 0) { banner.className = "hidden"; }
+  else {
+    const worst = urgent.some(a => a.severity === "critical") ? "critical" : "warning";
+    banner.className = worst;
+    banner.textContent = (worst === "critical" ? "✖ " : "⚠ ") +
+      urgent.map(a => a.message).join("  ·  ");
+  }
+  const list = $("alert-list");
+  if (!alerts || alerts.length === 0) {
+    list.innerHTML = `<li><span class="sev info">normal</span>no active alerts · all sensor timestamps fresh</li>`;
+  } else {
+    list.innerHTML = alerts.map(a =>
+      `<li><span class="sev ${a.severity}">${a.severity}</span>${escapeHtml(a.message)}</li>`).join("");
+  }
+  $("alert-count").textContent = alerts?.length ? `${alerts.length} active` : "clear";
+}
+
+/* ---- trip -------------------------------------------------------------------------- */
 
 async function refreshTrip() {
-  const r = await fetch("/api/trip");
-  const t = await r.json();
+  const t = await (await fetch("/api/trip")).json();
   if (!t.fix) { $("trip-pos").textContent = "no GPS fix"; return; }
   $("trip-mi").textContent = t.miles_today.toFixed(1);
   $("trip-state").textContent = t.fix.moving
     ? `moving · ${t.fix.speed_mph.toFixed(0)} mph` : "parked";
-  $("trip-pos").textContent =
-    `${t.fix.lat.toFixed(4)}, ${t.fix.lon.toFixed(4)}`;
-  $("poi-list").innerHTML = (t.nearby ?? []).slice(0, 4).map(p =>
+  $("trip-pos").textContent = `${t.fix.lat.toFixed(4)}, ${t.fix.lon.toFixed(4)}`;
+  $("poi-list").innerHTML = (t.nearby ?? []).slice(0, 3).map(p =>
     `<li>${escapeHtml(p.name)} <span class="dist">· ${p.type} · ${p.dist_mi} mi</span></li>`
   ).join("");
 }
 
-async function refreshAlerts() {
-  const r = await fetch("/api/alerts");
-  const { alerts } = await r.json();
-  const banner = $("alert-banner");
-  if (!alerts || alerts.length === 0) { banner.className = "hidden"; return; }
-  const worst = alerts.some(a => a.severity === "critical") ? "critical" : "warning";
-  banner.className = worst;
-  banner.textContent = (worst === "critical" ? "✖ " : "⚠ ") +
-    alerts.map(a => a.message).join("  ·  ");
-}
+/* ---- diagnostics ---------------------------------------------------------------------- */
 
-function setSocStatus(soc) {
-  const el = $("soc-status");
-  if (soc == null) { el.textContent = ""; return; }
-  // Reserved status colors, always icon + label — never color alone.
-  if (soc >= 50)      { el.textContent = "✓ OK";        el.className = "status good"; }
-  else if (soc >= 30) { el.textContent = "⚠ LOW";       el.className = "status warn"; }
-  else if (soc >= 15) { el.textContent = "⚠ VERY LOW";  el.className = "status serious"; }
-  else                { el.textContent = "✖ CRITICAL";  el.className = "status critical"; }
-}
+let auditCount = 0;
 
-function setLoadTile(dv) {
-  const big = $("load-big"), w = $("load-w"), note = $("load-note");
-  if (dv?.load_w == null) {
-    // The honest state: on shore power the charger is invisible to us, so we
-    // refuse to derive a load number rather than display a wrong one.
-    big.classList.add("unavailable");
-    big.innerHTML = dv?.shore_power_suspected
-      ? "unavailable on shore power"
-      : "–";
-    note.textContent = dv?.shore_power_suspected
-      ? "charging from a source telemetry can't see (inverter/charger is CAN-only)"
-      : "waiting for readings";
-  } else {
-    big.classList.remove("unavailable");
-    big.innerHTML = `<span id="load-w">${dv.load_w.toFixed(0)}</span><span class="unit">W</span>`;
-    note.textContent = "derived: sources in − net battery power · off-grid only";
+function updateDiagSummary(rd, serverTs) {
+  let n = 0, stale = 0;
+  for (const per of Object.values(rd ?? {})) {
+    for (const { ts } of Object.values(per)) {
+      n += 1;
+      if (serverTs - ts > 45) stale += 1;
+    }
   }
+  $("diag-summary").textContent =
+    `${n} readings · ${stale === 0 ? "all fresh" : `${stale} stale`} · ` +
+    `${auditCount} local tool calls · 0 external calls (no cloud endpoints exist)`;
 }
 
-/* Value column is color-coded by freshness: green <15s, yellow <45s,
-   red beyond (the age column carries the same fact in text, so color is
-   never the only channel). Click a device name to toggle that simulated
-   sensor offline/online. */
 function ageClass(age) {
   if (age < 15) return "val-ok";
   if (age < 45) return "val-warn";
@@ -268,26 +427,163 @@ function fillTable(rd, serverTs) {
   tbody.querySelectorAll("td.dev").forEach(td =>
     td.addEventListener("click", () => {
       if (!["shunt", "dcc50s", "hvac", "gps", "inverter"].includes(td.dataset.source)) return;
-      const offline = Number(td.dataset.age) > 45;   // stale ⇒ bring it back
-      fetch("/api/sensor", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: td.dataset.source, offline: !offline }),
-      }).then(refreshAudit);
+      const offline = Number(td.dataset.age) > 45;
+      postJson("/api/sensor", { source: td.dataset.source, offline: !offline })
+        .then(refreshAudit).catch(() => {});
     }));
 }
 
-/* ---- status / staleness ---------------------------------------------------- */
-
-async function refreshStatus() {
-  const r = await fetch("/api/status");
-  const s = await r.json();
-  const chip = $("stale-chip");
-  chip.classList.toggle("hidden", !s.stale);
-  if (s.stale) chip.textContent = `⚠ STALE ${fmtAge(s.staleness_s)}`;
-  $("clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+async function refreshAudit() {
+  const { entries } = await (await fetch("/api/audit?limit=40")).json();
+  auditCount = entries?.length ?? 0;
+  const tbody = $("audit-table").querySelector("tbody");
+  tbody.innerHTML = (entries ?? []).map(e =>
+    `<tr><td>${new Date(e.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>` +
+    `<td>${escapeHtml(e.tool)}</td>` +
+    `<td><code>${escapeHtml(e.args)}</code></td>` +
+    `<td>${escapeHtml(e.device ?? "–")}</td>` +
+    `<td class="num">${e.duration_ms}</td></tr>`).join("");
 }
 
-/* ---- sparklines ------------------------------------------------------------ */
+$("diag-open").addEventListener("click", () => {
+  $("drawer").classList.remove("hidden");
+  refreshRuntime(); refreshAudit();
+});
+$("drawer-close").addEventListener("click", () => $("drawer").classList.add("hidden"));
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") $("drawer").classList.add("hidden");
+});
+
+/* ---- chat -------------------------------------------------------------------------- */
+
+const chatHistory = [];
+
+async function sendChat(question) {
+  const log = $("chat-log"), input = $("chat-input"), btn = $("chat-send");
+  log.insertAdjacentHTML("afterbegin",
+    `<div class="msg user">${escapeHtml(question)}</div>`);
+  const pending = document.createElement("div");
+  pending.className = "msg assistant pending";
+  pending.textContent = "thinking… (first question loads the model)";
+  log.prepend(pending);
+  input.value = ""; btn.disabled = true;
+
+  chatHistory.push({ role: "user", content: question });
+  while (chatHistory.length > 8) chatHistory.shift();
+  try {
+    const data = await postJson("/v1/chat/completions", { messages: chatHistory });
+    const answer = data.choices[0].message.content;
+    chatHistory.push({ role: "assistant", content: answer });
+    const vg = data.vanguard ?? {};
+    const evidence = (vg.tool_calls ?? []).filter(t => !t.auto);
+    pending.classList.remove("pending");
+    pending.innerHTML = escapeHtml(answer) +
+      `<span class="meta">${escapeHtml(vg.provenance ?? "")}` +
+      (vg.tokens_per_s ? ` · ${vg.tokens_per_s} tok/s` : "") +
+      (vg.simulated ? " · SIM data" : "") + `</span>` +
+      (evidence.length ? `<details class="evidence"><summary>evidence used (${evidence.length} tool call${evidence.length > 1 ? "s" : ""})</summary>` +
+        evidence.map(t =>
+          `<code>${escapeHtml(t.tool)}(${escapeHtml(JSON.stringify(t.args))}) → ` +
+          `${escapeHtml(JSON.stringify(t.result))}</code>`).join("") +
+        `</details>` : "");
+    refreshAudit();
+  } catch (e) {
+    pending.classList.remove("pending");
+    pending.innerHTML = `<em>error: ${escapeHtml(String(e.message))}</em>`;
+    chatHistory.pop();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("chat-form").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const q = $("chat-input").value.trim();
+  if (q && !$("chat-send").disabled) sendChat(q);
+});
+document.querySelectorAll("#chat-chips button").forEach(b =>
+  b.addEventListener("click", () => { if (!$("chat-send").disabled) sendChat(b.dataset.q); }));
+
+/* ---- voice: raw 16kHz PCM → WAV → offline Whisper -------------------------- */
+
+const rec = { ctx: null, stream: null, node: null, chunks: [], active: false };
+
+async function startRecording() {
+  rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  rec.ctx = new AudioContext({ sampleRate: 16000 });
+  const src = rec.ctx.createMediaStreamSource(rec.stream);
+  rec.node = rec.ctx.createScriptProcessor(4096, 1, 1);
+  rec.chunks = [];
+  rec.node.onaudioprocess = e => {
+    if (rec.active) rec.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  src.connect(rec.node);
+  rec.node.connect(rec.ctx.destination);
+  rec.active = true;
+  $("chat-mic").classList.add("recording");
+  $("mic-badge").textContent = "🎤 LISTENING";
+}
+
+async function stopRecording() {
+  rec.active = false;
+  $("chat-mic").classList.remove("recording");
+  $("mic-badge").textContent = "🎤 MIC READY";
+  rec.node?.disconnect();
+  rec.stream?.getTracks().forEach(t => t.stop());
+  const rate = rec.ctx.sampleRate;
+  await rec.ctx.close();
+  const n = rec.chunks.reduce((s, c) => s + c.length, 0);
+  if (n < rate / 4) return;
+  const pcm = new Float32Array(n);
+  let off = 0;
+  for (const c of rec.chunks) { pcm.set(c, off); off += c.length; }
+  const wav = encodeWav(rate === 16000 ? pcm : resampleTo16k(pcm, rate));
+  const input = $("chat-input");
+  input.placeholder = "transcribing…";
+  try {
+    const r = await fetch("/api/transcribe", { method: "POST", body: wav });
+    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
+    const { text } = await r.json();
+    if (text) sendChat(text);
+    else input.placeholder = "didn't catch that — try again";
+  } catch (e) {
+    input.placeholder = `voice error: ${e.message}`;
+  } finally {
+    setTimeout(() => { input.placeholder = "Ask about power, climate, or the trip…"; }, 4000);
+  }
+}
+
+function resampleTo16k(pcm, fromRate) {
+  const ratio = fromRate / 16000;
+  const out = new Float32Array(Math.floor(pcm.length / ratio));
+  for (let i = 0; i < out.length; i++) out[i] = pcm[Math.floor(i * ratio)];
+  return out;
+}
+
+function encodeWav(pcm) {
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE");
+  w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, 16000, true);
+  v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) {
+    v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+const micBtn = $("chat-mic");
+micBtn.addEventListener("mousedown", () => startRecording().catch(e => {
+  $("chat-input").placeholder = `mic error: ${e.message}`;
+  $("mic-badge").textContent = "🎤 MIC UNAVAILABLE";
+}));
+micBtn.addEventListener("mouseup", () => { if (rec.active) stopRecording(); });
+micBtn.addEventListener("mouseleave", () => { if (rec.active) stopRecording(); });
+
+/* ---- sparklines ---------------------------------------------------------------------- */
 
 async function refreshSparks() {
   await Promise.all(Object.entries(SPARKS).map(async ([key, spec]) => {
@@ -308,7 +604,7 @@ function drawSpark(host, points, spec) {
     host.innerHTML = `<span class="minmax">no history yet</span>`;
     return;
   }
-  const W = 600, H = 64, PAD = 3;
+  const W = 600, H = 40, PAD = 3;
   const ts = points.map(p => p[0]), vs = points.map(p => p[1]);
   const t0 = ts[0], t1 = ts[ts.length - 1];
   let lo = Math.min(...vs), hi = Math.max(...vs);
@@ -319,8 +615,8 @@ function drawSpark(host, points, spec) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "none");
-  const base = line(PAD, y(Math.max(lo, Math.min(hi, 0))), W - PAD, y(Math.max(lo, Math.min(hi, 0))), "var(--baseline)", 1);
-  if (lo < 0 && hi > 0) svg.appendChild(base);   // zero line only when it's in-range
+  const zeroY = y(Math.max(lo, Math.min(hi, 0)));
+  if (lo < 0 && hi > 0) svg.appendChild(line(PAD, zeroY, W - PAD, zeroY, "var(--baseline)", 1));
   const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
   poly.setAttribute("points", points.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" "));
   poly.setAttribute("fill", "none");
@@ -380,152 +676,6 @@ function line(x1, y1, x2, y2, stroke, w) {
   return l;
 }
 
-/* ---- chat ------------------------------------------------------------------ */
-
-const chatHistory = [];   // client-side context, capped to keep prompts small
-
-async function sendChat(question) {
-  const log = $("chat-log"), input = $("chat-input"), btn = $("chat-send");
-  log.insertAdjacentHTML("beforeend",
-    `<div class="msg user">${escapeHtml(question)}</div>`);
-  const pending = document.createElement("div");
-  pending.className = "msg assistant pending";
-  pending.textContent = "thinking… (first question loads the model)";
-  log.appendChild(pending);
-  log.scrollTop = log.scrollHeight;
-  input.value = ""; btn.disabled = true;
-
-  chatHistory.push({ role: "user", content: question });
-  while (chatHistory.length > 8) chatHistory.shift();   // context discipline
-  try {
-    const r = await fetch("/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: chatHistory }),
-    });
-    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-    const data = await r.json();
-    const answer = data.choices[0].message.content;
-    chatHistory.push({ role: "assistant", content: answer });
-    const vg = data.vanguard ?? {};
-    const tools = (vg.tool_calls ?? []).map(t => t.tool).join(", ");
-    pending.classList.remove("pending");
-    pending.innerHTML = escapeHtml(answer) +
-      `<span class="meta">${vg.device ?? "?"} · ${vg.tokens_per_s ?? "?"} tok/s` +
-      (tools ? ` · tools: ${escapeHtml(tools)}` : " · no tools used") +
-      (vg.simulated ? " · SIM data" : "") + `</span>`;
-    refreshAudit();
-  } catch (e) {
-    pending.classList.remove("pending");
-    pending.innerHTML = `<em>error: ${escapeHtml(String(e.message))}</em>`;
-    chatHistory.pop();
-  } finally {
-    btn.disabled = false;
-    log.scrollTop = log.scrollHeight;
-  }
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g,
-    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-$("chat-form").addEventListener("submit", ev => {
-  ev.preventDefault();
-  const q = $("chat-input").value.trim();
-  if (q && !$("chat-send").disabled) sendChat(q);
-});
-
-/* ---- voice: raw 16kHz PCM → WAV → offline Whisper -------------------------- */
-
-const rec = { ctx: null, stream: null, node: null, chunks: [], active: false };
-
-async function startRecording() {
-  rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  rec.ctx = new AudioContext({ sampleRate: 16000 });
-  const src = rec.ctx.createMediaStreamSource(rec.stream);
-  rec.node = rec.ctx.createScriptProcessor(4096, 1, 1);
-  rec.chunks = [];
-  rec.node.onaudioprocess = e => {
-    if (rec.active) rec.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  };
-  src.connect(rec.node);
-  rec.node.connect(rec.ctx.destination);
-  rec.active = true;
-  $("chat-mic").classList.add("recording");
-}
-
-async function stopRecording() {
-  rec.active = false;
-  $("chat-mic").classList.remove("recording");
-  rec.node?.disconnect();
-  rec.stream?.getTracks().forEach(t => t.stop());
-  const rate = rec.ctx.sampleRate;      // ctx may not honour 16k; send actual
-  await rec.ctx.close();
-  const n = rec.chunks.reduce((s, c) => s + c.length, 0);
-  if (n < rate / 4) return;             // <0.25s — ignore stray clicks
-  const pcm = new Float32Array(n);
-  let off = 0;
-  for (const c of rec.chunks) { pcm.set(c, off); off += c.length; }
-  const wav = encodeWav(rate === 16000 ? pcm : resampleTo16k(pcm, rate));
-  const input = $("chat-input");
-  input.placeholder = "transcribing…";
-  try {
-    const r = await fetch("/api/transcribe", { method: "POST", body: wav });
-    if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
-    const { text } = await r.json();
-    if (text) { input.value = text; sendChat(text); input.value = ""; }
-    else input.placeholder = "didn't catch that — try again";
-  } catch (e) {
-    input.placeholder = `voice error: ${e.message}`;
-  } finally {
-    setTimeout(() => { input.placeholder = "Can I run the cooktop for 25 minutes?"; }, 4000);
-  }
-}
-
-function resampleTo16k(pcm, fromRate) {
-  const ratio = fromRate / 16000;
-  const out = new Float32Array(Math.floor(pcm.length / ratio));
-  for (let i = 0; i < out.length; i++) out[i] = pcm[Math.floor(i * ratio)];
-  return out;
-}
-
-function encodeWav(pcm) {
-  const buf = new ArrayBuffer(44 + pcm.length * 2);
-  const v = new DataView(buf);
-  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE");
-  w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
-  v.setUint16(22, 1, true); v.setUint32(24, 16000, true);
-  v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  w(36, "data"); v.setUint32(40, pcm.length * 2, true);
-  for (let i = 0; i < pcm.length; i++) {
-    v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
-  }
-  return new Blob([buf], { type: "audio/wav" });
-}
-
-const micBtn = $("chat-mic");
-micBtn.addEventListener("mousedown", () => startRecording().catch(e => {
-  $("chat-input").placeholder = `mic error: ${e.message}`;
-}));
-micBtn.addEventListener("mouseup", () => { if (rec.active) stopRecording(); });
-micBtn.addEventListener("mouseleave", () => { if (rec.active) stopRecording(); });
-
-/* ---- audit view ------------------------------------------------------------ */
-
-async function refreshAudit() {
-  const r = await fetch("/api/audit?limit=25");
-  const { entries } = await r.json();
-  const tbody = $("audit-table").querySelector("tbody");
-  tbody.innerHTML = (entries ?? []).map(e =>
-    `<tr><td>${new Date(e.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>` +
-    `<td>${escapeHtml(e.tool)}</td>` +
-    `<td><code>${escapeHtml(e.args)}</code></td>` +
-    `<td>${escapeHtml(e.device ?? "–")}</td>` +
-    `<td class="num">${e.duration_ms}</td></tr>`).join("");
-}
-
 /* ---- boot ------------------------------------------------------------------ */
 
 async function tick() {
@@ -537,10 +687,14 @@ async function tick() {
   }
 }
 tick();
+refreshInsight();
 refreshSparks();
 refreshAudit();
 refreshTrip();
+refreshRuntime();
 setInterval(tick, REFRESH_LATEST_MS);
+setInterval(refreshInsight, REFRESH_INSIGHT_MS);
 setInterval(refreshSparks, REFRESH_HISTORY_MS);
 setInterval(refreshAudit, 15_000);
 setInterval(refreshTrip, 10_000);
+setInterval(refreshRuntime, 20_000);
