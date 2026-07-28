@@ -40,7 +40,27 @@ Next/◀ are pinned bottom-right and never move. 15 steps:
 
 Steps 11–12 are the only ones where you *wait for reality* — narrate over it.
 
-## Option B — the 90-second Drive take (freeform)
+## Option B — the 70-second cut (recommended for LinkedIn)
+
+One autonomous event, one visibly local voice exchange, one receipt.
+
+| Clock | Beat | Say-over |
+|---|---|---|
+| 0:00–0:07 | Establish the dashboard | "This Surface Pro is monitoring a simulated Sprinter — but the voice, the model, the NPU inference, and the decisions are real." |
+| 0:07–0:15 | Point at the rail | "Local Qwen on the NPU, voice stays local, no cloud model — even with Starlink connected." |
+| 0:15–0:20 | Press **▶ Drive** | "Let's go for a drive — and stage a failure." |
+| 0:20–0:45 | Fault at 0:30 → alert fires | "The charging path just failed. Mercedes sees nothing wrong — only the fused view catches it." |
+| 0:45–1:00 | **Guardian event card** takes over the strip: DETECTED → VERIFIED → POLICY MATCHED → ACTIONED → RECOVERY CONFIRMED, load reduced, forecast improved, decision receipt underneath | "The Guardian can't fix a charging path, so it does the one legitimate thing: sheds the loads it can no longer afford. Detected, verified, actioned, recovery confirmed — every stage logged." |
+| 1:00–1:15 | Tap the amber **why did you do that?** chip (it appears by itself after the action) — or ask it by voice via 🎤 | the answer is read back from the Guardian log, with the local pipeline banner over the reply |
+| 1:15–1:20 | Footer + receipt line | "Telemetry, voice, reasoning, decisions — processed on this device. Zero external calls." |
+
+**The offline beat (optional, +8s):** switch Network to **Off** — the rail
+flips to **NO UPLINK · LOCAL AI ACTIVE**. Ask the voice question *then*.
+Local AI isn't a fallback for bad connectivity; it just doesn't need the
+internet. (In the drive take Guardian already suspends Starlink for you —
+same message, cleaner narrative.)
+
+## Option C — the 90-second Drive take (freeform)
 
 | Clock | What the camera sees |
 |---|---|
@@ -75,12 +95,18 @@ API — it ships audio to a cloud service.
 
 ## Good voice/typed questions (all answered on-device)
 
-- "Can I run the cooktop for 25 minutes?" *(deterministic verdict)*
-- "What is charging the battery right now?" *(NPU, real numbers)*
-- "Will I have enough power until sunrise?"
-- "Are we ready to depart?" *(deterministic checklist)*
-- "What should we do nearby?" *(offline POIs)*
-- "Why did you turn Starlink off?" *(after a Guardian action)*
+The four chips on screen: cooktop 25 min? · power until sunrise? ·
+anything abnormal? · ready to depart?  After any Guardian action an amber
+**why did you do that?** chip appears on its own for ~15 minutes.
+
+Also good spoken: "What is charging the battery right now?" *(NPU, real
+numbers)* · "What should we do nearby?" *(offline POIs)* · "Why did you
+turn Starlink off?"
+
+Voice questions get the full pipeline on screen: **● LISTENING LOCALLY**
+while dictating, `VOICE → WINDOWS ON-DEVICE DICTATION → QWEN3-4B ON NPU →
+VERIFIED TOOLS` while thinking, and a green *"✓ processed entirely on this
+device · N local tool calls · 0 external calls"* receipt under the answer.
 
 ## Numbers you can quote (measured, BENCHMARKS.md)
 

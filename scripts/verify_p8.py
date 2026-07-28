@@ -117,6 +117,24 @@ def flow_checks() -> None:
               any(e["stage"] == "confirmed" and "→" in e["detail"]
                   and "battery net power" in e["detail"]
                   for e in s3["events"]))
+        # P10: the camera-ready event card, assembled from logged events only.
+        card = s3.get("card")
+        check("event card present during the episode", card is not None)
+        if card:
+            check("card carries the executed actions + savings",
+                  len(card["actions"]) >= 2 and (card["savings_w"] or 0) > 0,
+                  f"{card['actions']} ~{card['savings_w']}W")
+            check("card risk lines include sunrise SOC vs reserve",
+                  any("sunrise" in k for k, _ in card["risk"])
+                  and any("reserve" in k for k, _ in card["risk"]))
+            check("card result verified from the confirmed event",
+                  card["result"] is not None
+                  and card["result"]["net_after_w"] is not None)
+            check("decision receipt: evidence, policy, deterministic AI, 0 external",
+                  "readings" in card["receipt"]["evidence"]
+                  and "deterministic" in card["receipt"]["ai"]
+                  and card["receipt"]["external"] == "0 external calls",
+                  card["receipt"]["policy"])
         c.post("/api/guardian/run")
         n_eps = len({e["episode"] for e in
                      c.get("/api/guardian").json()["events"]

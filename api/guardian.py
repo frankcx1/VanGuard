@@ -81,6 +81,18 @@ def _get(readings, source, metric):
         return None
 
 
+# Detection metrics worth putting on camera, in display order. Only keys
+# actually present in the episode's metrics are rendered.
+_CARD_METRICS = (
+    ("soc_at_sunrise_pct", "projected SOC at sunrise", "{:.0f}%"),
+    ("reserve_pct", "policy reserve", "{:.0f}%"),
+    ("voltage_v", "battery voltage", "{:.2f} V"),
+    ("ac_w", "AC load at detection", "{:.0f} W"),
+    ("alt_w", "alternator input", "{:.0f} W"),
+    ("chassis_v", "chassis bus", "{:.1f} V"),
+)
+
+
 class Guardian:
     """Per-process state machine. Episodes: detect → verify → decide →
     act → confirm; or withheld/proposed branches."""
@@ -154,7 +166,8 @@ class Guardian:
             "actions": ["suspend_starlink", "inverter_standby_off"],
             "proposals": ["hvac_off"],
             "metrics": {"net_w": net,
-                        "soc_at_sunrise_pct": outlook["soc_at_sunrise_pct"]},
+                        "soc_at_sunrise_pct": outlook["soc_at_sunrise_pct"],
+                        "reserve_pct": outlook["assumptions"]["reserve_pct"]},
         }
 
     def detect_voltage_sag(self, readings) -> dict | None:
@@ -366,10 +379,12 @@ class Guardian:
                        "title": risk["title"], "stage": "decided",
                        "metrics": risk["metrics"], "acted_ts": 0}
 
+        plan_labels = [ACTIONS[a]["label"] for a in eligible]
         if level in ("observe",):
             await self._emit(episode, "decided", risk["title"],
                              f"autonomy level is observe - logging only "
-                             f"(would have: {plan_txt})")
+                             f"(would have: {plan_txt})",
+                             {"recommended": plan_labels})
             self.active["stage"] = "confirmed"
             return
         if level == "advise" or not sim_only:
@@ -377,14 +392,16 @@ class Guardian:
                              f"recommendation: {plan_txt} "
                              f"(~{savings:.0f}W); autonomy "
                              + ("level is advise" if sim_only else
-                                "suspended on live hardware (phase 2)"))
+                                "suspended on live hardware (phase 2)"),
+                             {"recommended": plan_labels, "savings_w": savings})
             self.active["stage"] = "confirmed"
             return
         if level == "ask" and eligible:
             self.active["stage"] = "proposed"
             self.active["proposal"] = eligible + proposals
             await self._emit(episode, "proposed", risk["title"],
-                             f"awaiting approval: {plan_txt} (~{savings:.0f}W)")
+                             f"awaiting approval: {plan_txt} (~{savings:.0f}W)",
+                             {"actions": plan_labels, "savings_w": savings})
             return
 
         # protect / emergency: execute auto+interlock class, propose the rest.
@@ -394,22 +411,26 @@ class Guardian:
                 await self._execute(a)
                 executed.append(a)
         if executed:
+            done_labels = [ACTIONS[a]["label"] for a in executed]
+            reco_labels = [ACTIONS[p]["label"] for p in proposals]
             await self._emit(
                 self.active["episode"], "decided", risk["title"],
                 f"policy-approved plan: {plan_txt}, estimated saving "
                 f"~{savings:.0f}W" + (f"; also recommending: "
-                + ", ".join(ACTIONS[p]["label"] for p in proposals)
-                if proposals else ""))
+                + ", ".join(reco_labels) if proposals else ""),
+                {"actions": done_labels, "savings_w": savings,
+                 "recommended": reco_labels})
             await self._emit(self.active["episode"], "acted", risk["title"],
-                             "issued: " + ", ".join(
-                                 ACTIONS[a]["label"] for a in executed))
+                             "issued: " + ", ".join(done_labels),
+                             {"actions": done_labels})
             self.active["stage"] = "acted"
             self.active["acted_ts"] = int(time.time())
         else:
             await self._emit(self.active["episode"], "decided", risk["title"],
                              "no eligible automatic action; " +
                              (f"recommending: {plan_txt}" if proposals else
-                              "monitoring"))
+                              "monitoring"),
+                             {"recommended": plan_labels})
             self.active["stage"] = "confirmed"
 
     async def approve(self) -> bool:
@@ -417,10 +438,10 @@ class Guardian:
             return False
         for a in self.active.get("proposal", []):
             await self._execute(a)
+        labels = [ACTIONS[a]["label"] for a in self.active.get("proposal", [])]
         await self._emit(self.active["episode"], "acted", self.active["title"],
-                         "human approved: " + ", ".join(
-                             ACTIONS[a]["label"]
-                             for a in self.active.get("proposal", [])))
+                         "human approved: " + ", ".join(labels),
+                         {"actions": labels})
         self.active["stage"] = "acted"
         self.active["acted_ts"] = int(time.time())
         return True
@@ -443,6 +464,57 @@ class Guardian:
         self._was_moving = False
         await self.app.state.store.set_meta("autonomy_level", "protect")
 
+    def _build_card(self, events, readings, now, level, mode) -> dict | None:
+        """One camera-ready summary of the active episode: the risk numbers,
+        what Guardian did, whether it worked, and the decision receipt.
+        Everything here is copied from logged events — never recomputed, so
+        the card can't disagree with the audit trail."""
+        if not self.active:
+            return None
+        ep = self.active["episode"]
+        mine = sorted((e for e in events
+                       if e["episode"] == ep or e.get("id") == ep),
+                      key=lambda e: e.get("id", 0))
+        stages = {e["stage"]: e for e in mine}
+        metrics = self.active.get("metrics", {})
+        risk = [[label, fmt.format(metrics[k])]
+                for k, label, fmt in _CARD_METRICS
+                if metrics.get(k) is not None]
+        ddata = (stages.get("decided") or stages.get("proposed") or {}) \
+            .get("data") or {}
+        cdata = (stages.get("confirmed") or {}).get("data") or {}
+        result = None
+        if cdata.get("net_w_after") is not None:
+            nb, na = cdata.get("net_w_before") or 0, cdata["net_w_after"] or 0
+            sb, sa = cdata.get("sunrise_before"), cdata.get("sunrise_after")
+            result = {"net_before_w": nb, "net_after_w": na,
+                      "sunrise_before_pct": sb, "sunrise_after_pct": sa,
+                      "recovered": na > nb or (sb is not None and sa is not None
+                                               and sa >= sb)}
+        fresh = sum(1 for per in readings.values()
+                    for ts, _v in per.values() if now - ts <= 60)
+        engine = getattr(self.app.state, "engine", None)
+        return {
+            "stage": self.active["stage"],
+            "title": self.active["title"],
+            "detected_ts": mine[0]["ts"] if mine else now,
+            "risk": risk,
+            "actions": ddata.get("actions") or [],
+            "recommended": ddata.get("recommended") or [],
+            "savings_w": ddata.get("savings_w"),
+            "result": result,
+            "receipt": {
+                "evidence": f"{fresh} fresh readings · " +
+                            ("high confidence" if not self.data_confidence_low(
+                                readings, now) else "LOW confidence"),
+                "policy": f"{mode.title()} · {level.title()}",
+                "ai": ("decision deterministic · explanation on "
+                       f"{engine.device}" if engine
+                       else "decision deterministic · no model in the loop"),
+                "external": "0 external calls",
+            },
+        }
+
     async def status(self) -> dict:
         store = self.app.state.store
         cfg = self.app.state.cfg
@@ -453,6 +525,11 @@ class Guardian:
                 if a["permission"] in ("auto", "interlock")]
         confirm = [a["label"] for a in ACTIONS.values()
                    if a["permission"] == "confirm"]
+        events = await store.guardian_events(limit=24)
+        card = None
+        if self.active:
+            card = self._build_card(events, await store.latest(),
+                                    int(time.time()), level, mode)
         return {
             "armed": level not in ("observe",) and cfg.get("source") == "sim",
             "level": level,
@@ -464,7 +541,8 @@ class Guardian:
                       "any action on low sensor confidence"],
             "active": ({k: v for k, v in self.active.items()
                         if k != "metrics"} if self.active else None),
-            "events": await store.guardian_events(limit=24),
+            "card": card,
+            "events": events,
         }
 
 

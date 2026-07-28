@@ -547,7 +547,49 @@ verify_p9 → **27/27**, full regression green.
 
 ---
 
-<!-- Template for subsequent entries:
+## 2026-07-27 — P10: filming polish — the visible Guardian event
+
+Final pre-filming review verdict: breadth is done; make three things
+unmistakable on compressed LinkedIn video — voice is local, Guardian can
+prevent a developing problem, every decision is explainable and audited.
+No new subsystems; presentation-layer truth-telling on machinery that
+already existed.
+
+- **Guardian event card**: during an episode the compact strip yields to
+  a camera-sized card — risk numbers (projected sunrise SOC vs policy
+  reserve, voltage, alternator input…), the action taken with watts
+  shed, `✓ RECOVERY VERIFIED · battery −122W → −81W · sunrise 5% → 20%`,
+  and a one-line **decision receipt** (fresh readings + confidence,
+  Mode · Level, "decision deterministic · explanation on NPU", 0 external
+  calls). Assembled server-side (`/api/guardian` → `card`) strictly from
+  logged `guardian_events` — the card *cannot* disagree with the audit
+  trail because it is the audit trail. Timeline relabeled for camera:
+  DETECTED → VERIFIED → POLICY MATCHED → ACTIONED → RECOVERY CONFIRMED,
+  now shown through the confirmed stage. Structured data (action labels,
+  savings_w) added to decided/acted/proposed events to feed it.
+- **"Why did you do that?"** appears as an amber first-class chip on its
+  own for 15 min after any Guardian action — the question a viewer has
+  at exactly that moment. Chips curated down to four static + this one
+  (the clipped sixth chip is gone).
+- **Visible local voice pipeline**: 🎤 shows `● LISTENING LOCALLY`; the
+  pending answer shows `VOICE → WINDOWS ON-DEVICE DICTATION → QWEN3-4B
+  ON NPU → VERIFIED TOOLS` (labels the *actual* path — Whisper fallback
+  says LOCAL WHISPER, device read from the runtime, never assumed); the
+  reply carries a green `✓ processed entirely on this device · N local
+  tool calls · 0 external calls` receipt. Flag is consumed per-send and
+  cleared on aborted recordings so a typed question can never wear the
+  voice banner.
+- **NO UPLINK · LOCAL AI ACTIVE** replaces `⛔ OFFLINE` in the rail when
+  the network is off but the model is exported/loaded — local AI is not
+  a fallback for bad connectivity. Footer (presentation):
+  "Telemetry · voice · reasoning · decisions — processed on this device".
+- Guardian policy text moved behind a `policy details ▾` expander;
+  normal state is quieter, event state is bigger.
+- FILMING.md gains the recommended **70-second cut** and the optional
+  offline beat.
+
+Verification: verify_p8 extended with five card checks → **25/25**;
+verify_p9 **35/35**; full stack relaunched clean.
 
 ## YYYY-MM-DD — Mx: <title>
 

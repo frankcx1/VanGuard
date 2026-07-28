@@ -85,7 +85,7 @@ async function refreshLatest() {
     $("hvac-note").textContent = "smart climate control";
   }
   $("src-line").textContent = PRESENTATION
-    ? "VanGuard · all processing on device"
+    ? "Telemetry · voice · reasoning · decisions — processed on this device"
     : `source: ${data.source_kind}` + (data.simulated ? " · SIMULATED DATA — no van hardware connected" : " · live van data");
 
   const soc = get(rd, "shunt", "soc_pct");
@@ -191,10 +191,12 @@ function setNetworkTile(rd) {
     $("net-dish").textContent = "uplink is internet only · AI & telemetry stay on device";
   }
 
-  // Rail badge: connectivity truth at a glance.
+  // Rail badge: connectivity truth at a glance. With no uplink the honest
+  // headline is that the AI keeps working — local is not a fallback.
   const badge = $("net-badge");
   if (mode === 0) {
-    badge.textContent = "⛔ OFFLINE";
+    badge.textContent = AI_INFO.loaded || AI_INFO.ready
+      ? "NO UPLINK · LOCAL AI ACTIVE" : "⛔ OFFLINE";
     badge.className = "badge rail";
   } else if (booting) {
     badge.textContent = "📡 STARLINK · booting";
@@ -536,8 +538,16 @@ async function refreshStatus() {
   if (s.mode && $("mode-sel").value !== s.mode) $("mode-sel").value = s.mode;
 }
 
+// What the loaded runtime reports — used by the voice-pipeline banner and
+// the offline rail badge, so on-camera claims track reality.
+const AI_INFO = { loaded: false, ready: false, device: null, model: "LOCAL MODEL" };
+
 async function refreshRuntime() {
   const r = await (await fetch("/api/runtime")).json();
+  AI_INFO.loaded = r.loaded;
+  AI_INFO.ready = r.model_exported === true;
+  AI_INFO.device = r.device_confirmed;
+  if (r.model_short) AI_INFO.model = r.model_short.toUpperCase();
   const badge = $("ai-badge");
   if (r.loaded) {
     badge.textContent = `LOCAL AI: ${r.device_confirmed} · ${r.model_short}`;
@@ -571,6 +581,11 @@ async function refreshRuntime() {
 /* ---- guardian --------------------------------------------------------------- */
 
 const G_STAGES = ["detected", "verified", "decided", "acted", "confirmed"];
+// Camera-friendly names for the same five stages.
+const G_STAGE_LABELS = {
+  detected: "DETECTED", verified: "VERIFIED", decided: "POLICY MATCHED",
+  acted: "ACTIONED", confirmed: "RECOVERY CONFIRMED",
+};
 
 // Plain-language meaning of each autonomy level, shown with the selector.
 const G_LEVELS = {
@@ -596,17 +611,24 @@ async function refreshGuardian() {
   const approveRow = $("g-approve-row");
   approveRow.classList.toggle("hidden", !(active && active.stage === "proposed"));
 
-  if (active && active.stage !== "confirmed") {
+  if (active) {
     const stageIdx = active.stage === "proposed" ? 2 : G_STAGES.indexOf(active.stage);
     tl.classList.remove("hidden");
     tl.innerHTML = G_STAGES.map((s, i) => {
-      const cls = i < stageIdx ? "done" : i === stageIdx ? "now" : "";
-      const label = (s === "decided" && active.stage === "proposed") ? "PROPOSED" : s.toUpperCase();
+      const cls = i < stageIdx ? "done" : i === stageIdx ? (s === "confirmed" ? "done" : "now") : "";
+      const label = (s === "decided" && active.stage === "proposed")
+        ? "PROPOSED" : G_STAGE_LABELS[s];
       return `<span class="g-step ${cls}">${label}</span>`;
     }).join(`<span class="g-arrow">→</span>`);
   } else {
     tl.classList.add("hidden");
   }
+
+  // During an episode the compact strip yields to the full event card:
+  // risk numbers, action taken, verified result, and the decision receipt.
+  const hasCard = renderGuardianCard(g.card);
+  document.querySelector(".guardian").classList.toggle("event", hasCard);
+  body.classList.toggle("hidden", hasCard);
 
   const ev = (g.events ?? [])[0];
   if (active && ev) {
@@ -621,15 +643,73 @@ async function refreshGuardian() {
       "voltage sag, charging path, and sensor health";
     body.title = "";
   }
+
+  // "Why did you do that?" becomes a first-class prompt right after Guardian
+  // acts — the question a viewer (and an owner) actually has in that moment.
+  const acted = (g.events ?? []).find(e => ["acted", "confirmed"].includes(e.stage));
+  ensureWhyChip(!!acted && (Date.now() / 1000 - acted.ts) < 900);
+
+  $("g-policy-summary").textContent =
+    `${g.level}: ${G_LEVELS[g.level] ?? ""} · policy details`;
   $("g-policy").innerHTML =
-    `<div title="${escapeHtml(G_LEVELS[g.level] ?? "")}"><b>${escapeHtml(g.level)}</b>: ${escapeHtml(G_LEVELS[g.level] ?? "")}</div>` +
-    `<div title="can do alone: ${escapeHtml(g.allowed_auto.join(" · "))}">can do alone: ${escapeHtml(g.allowed_auto.join(" · "))}</div>` +
-    `<div title="asks first: ${escapeHtml(g.requires_approval.join(" · "))} | never: ${escapeHtml((g.never ?? []).join(" · "))}">` +
-    `asks first: ${escapeHtml(g.requires_approval.join(" · "))} · never: ${escapeHtml((g.never ?? []).slice(0, 2).join(" · "))}</div>`;
+    `<div>can do alone: ${escapeHtml(g.allowed_auto.join(" · "))}</div>` +
+    `<div>asks first: ${escapeHtml(g.requires_approval.join(" · "))}</div>` +
+    `<div>never: ${escapeHtml((g.never ?? []).join(" · "))}</div>`;
   const sel = $("g-level-sel");
   sel.title = Object.entries(G_LEVELS)
     .map(([k, v]) => `${k}: ${v}`).join("\n");
   Array.from(sel.options).forEach(o => { o.title = G_LEVELS[o.value] ?? ""; });
+}
+
+function renderGuardianCard(card) {
+  const el = $("g-card");
+  if (!card) { el.classList.add("hidden"); return false; }
+  const fmtW = w => `${w > 0 ? "+" : ""}${Math.round(w ?? 0)} W`;
+  const risk = (card.risk ?? []).map(([k, v]) =>
+    `<span class="gc-row">${escapeHtml(k)} <b>${escapeHtml(v)}</b></span>`).join("");
+  const verb = card.stage === "proposed" ? "GUARDIAN PROPOSAL" : "GUARDIAN ACTION";
+  const acts = card.actions?.length
+    ? escapeHtml(card.actions.join(" · ")) +
+      (card.savings_w ? ` · load reduced <b>${Math.round(card.savings_w)} W</b>` : "")
+    : (card.recommended?.length
+      ? "recommends: " + escapeHtml(card.recommended.join(" · "))
+      : "monitoring — no action eligible");
+  let result = "";
+  if (card.result) {
+    const r = card.result;
+    result = `<div class="gc-result ${r.recovered ? "ok" : ""}">` +
+      (r.recovered ? "✓ RECOVERY VERIFIED" : "verifying…") +
+      ` · battery ${fmtW(r.net_before_w)} → <b>${fmtW(r.net_after_w)}</b>` +
+      (r.sunrise_before_pct != null && r.sunrise_after_pct != null
+        ? ` · sunrise ${r.sunrise_before_pct.toFixed(0)}% → <b>${r.sunrise_after_pct.toFixed(0)}%</b>` : "") +
+      `</div>`;
+  }
+  const rc = card.receipt ?? {};
+  el.innerHTML =
+    `<div class="gc-title">${escapeHtml(card.title.toUpperCase())}</div>` +
+    (risk ? `<div class="gc-grid">${risk}</div>` : "") +
+    `<div class="gc-action"><span>${verb}</span> ${acts}</div>` +
+    result +
+    `<div class="gc-receipt" title="decision receipt — everything above is read back from the audit log">` +
+    [rc.evidence, rc.policy, rc.ai, rc.external]
+      .filter(Boolean).map(escapeHtml).join(" · ") + `</div>`;
+  el.classList.remove("hidden");
+  return true;
+}
+
+function ensureWhyChip(show) {
+  let chip = document.querySelector("#chat-chips .why-chip");
+  if (show && !chip) {
+    chip = document.createElement("button");
+    chip.className = "why-chip";
+    chip.dataset.q = "Why did you do that?";
+    chip.textContent = "why did you do that?";
+    chip.addEventListener("click", () =>
+      { if (!$("chat-send").disabled) sendChat(chip.dataset.q); });
+    $("chat-chips").prepend(chip);
+  } else if (!show && chip) {
+    chip.remove();
+  }
 }
 
 $("g-level-sel").addEventListener("change", async () => {
@@ -822,13 +902,34 @@ document.addEventListener("keydown", ev => {
 
 const chatHistory = [];
 
+// Set when the question arrived by voice ("dictation" = Windows on-device
+// voice typing, "whisper" = the local Whisper fallback) so the answer can
+// show the whole local pipeline it travelled through. Never claims a stage
+// that didn't run.
+let voiceFlow = null;
+
+const VOICE_LABELS = {
+  dictation: "WINDOWS ON-DEVICE DICTATION",
+  whisper: "LOCAL WHISPER",
+};
+
 async function sendChat(question) {
   const log = $("chat-log"), input = $("chat-input"), btn = $("chat-send");
+  const viaVoice = voiceFlow;
+  voiceFlow = null;
+  $("chat-meta").textContent = "";
+  $("chat-meta").classList.remove("listening");
   log.insertAdjacentHTML("afterbegin",
     `<div class="msg user">${escapeHtml(question)}</div>`);
   const pending = document.createElement("div");
   pending.className = "msg assistant pending";
-  pending.textContent = "thinking… (first question loads the model)";
+  if (viaVoice) {
+    const dev = AI_INFO.loaded && AI_INFO.device ? ` ON ${AI_INFO.device}` : "";
+    pending.textContent =
+      `VOICE → ${VOICE_LABELS[viaVoice]} → ${AI_INFO.model}${dev} → VERIFIED TOOLS`;
+  } else {
+    pending.textContent = "thinking… (first question loads the model)";
+  }
   log.prepend(pending);
   input.value = ""; btn.disabled = true;
 
@@ -841,7 +942,13 @@ async function sendChat(question) {
     const vg = data.vanguard ?? {};
     const evidence = (vg.tool_calls ?? []).filter(t => !t.auto);
     pending.classList.remove("pending");
+    const nTools = (vg.tool_calls ?? []).length;
     pending.innerHTML = mdLite(escapeHtml(answer)) +
+      (viaVoice
+        ? `<span class="meta voice-receipt">✓ processed entirely on this device — ` +
+          `${VOICE_LABELS[viaVoice].toLowerCase()} · ` +
+          `${nTools} local tool call${nTools === 1 ? "" : "s"} · 0 external calls</span>`
+        : "") +
       `<span class="meta">${escapeHtml(vg.provenance ?? "")}` +
       (vg.tokens_per_s ? ` · ${vg.tokens_per_s} tok/s` : "") +
       (vg.simulated && !PRESENTATION ? " · SIM data" : "") + `</span>` +
@@ -886,12 +993,17 @@ async function startRecording() {
   rec.active = true;
   $("chat-mic").classList.add("recording");
   $("mic-badge").textContent = "🎤 LISTENING";
+  $("chat-meta").textContent = "● LISTENING LOCALLY";
+  $("chat-meta").classList.add("listening");
 }
 
 async function stopRecording() {
   rec.active = false;
+  voiceFlow = null;   // re-set only if a transcript actually gets sent
   $("chat-mic").classList.remove("recording");
   $("mic-badge").textContent = "🎤 MIC READY";
+  $("chat-meta").textContent = "";
+  $("chat-meta").classList.remove("listening");
   rec.node?.disconnect();
   rec.stream?.getTracks().forEach(t => t.stop());
   const rate = rec.ctx.sampleRate;
@@ -908,7 +1020,7 @@ async function stopRecording() {
     const r = await fetch("/api/transcribe", { method: "POST", body: wav });
     if (!r.ok) throw new Error((await r.json()).detail ?? r.status);
     const { text } = await r.json();
-    if (text) sendChat(text);
+    if (text) { voiceFlow = "whisper"; sendChat(text); }
     else input.placeholder = "didn't catch that — try again";
   } catch (e) {
     input.placeholder = `voice error: ${e.message}`;
@@ -949,10 +1061,21 @@ micBtn.addEventListener("click", async () => {
   $("chat-input").focus();
   try {
     await postJson("/api/dictate", {});
+    voiceFlow = "dictation";
     $("mic-badge").textContent = "🎤 WINDOWS DICTATION";
+    $("chat-meta").textContent = "● LISTENING LOCALLY";
+    $("chat-meta").classList.add("listening");
     setTimeout(() => {
       if (!rec.active) $("mic-badge").textContent = "🎤 MIC READY";
     }, 8000);
+    setTimeout(() => {
+      // Don't leave a LISTENING claim on screen after the dictation session
+      // has plausibly ended (the send itself also clears it).
+      if ($("chat-meta").classList.contains("listening")) {
+        $("chat-meta").textContent = "";
+        $("chat-meta").classList.remove("listening");
+      }
+    }, 45000);
   } catch {
     startRecording().catch(e => {
       $("chat-input").placeholder = `mic error: ${e.message}`;

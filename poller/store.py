@@ -188,12 +188,12 @@ class Store:
 
     async def guardian_events(self, limit: int = 40) -> list[dict]:
         cur = await self._db.execute(
-            "SELECT ts, episode, stage, title, detail, data_json "
+            "SELECT id, ts, episode, stage, title, detail, data_json "
             "FROM guardian_events ORDER BY id DESC LIMIT ?", (limit,))
         import json as _json
-        return [{"ts": int(t), "episode": int(e), "stage": s, "title": ti,
-                 "detail": d, "data": _json.loads(dj or "{}")}
-                for t, e, s, ti, d, dj in await cur.fetchall()]
+        return [{"id": int(i), "ts": int(t), "episode": int(e), "stage": s,
+                 "title": ti, "detail": d, "data": _json.loads(dj or "{}")}
+                for i, t, e, s, ti, d, dj in await cur.fetchall()]
 
     async def add_patrol(self, status: str, summary: str, findings_json: str,
                          source: str, duration_ms: int) -> None:

@@ -218,6 +218,19 @@ sim-only actions), per-action permission classes with cooldowns, episodes
 answers "why did you do that?" from `get_guardian_log`, never from memory.
 Full contract: `GUARDIAN_POLICY.md`.
 
+During an episode `/api/guardian` also returns a server-built **event
+card** (risk numbers, action + watts shed, verified before→after result,
+and a decision receipt: evidence freshness, Mode · Level, "decision
+deterministic · explanation on NPU", 0 external calls) — assembled
+strictly from logged `guardian_events`, so the on-screen card can never
+disagree with the audit trail. The UI enlarges the Guardian strip into
+this card while the episode is live and surfaces an automatic
+"why did you do that?" chat chip for 15 minutes after any action. Voice
+questions display their pipeline honestly (`● LISTENING LOCALLY`, then
+`VOICE → WINDOWS ON-DEVICE DICTATION (or LOCAL WHISPER) → model ON
+<device> → VERIFIED TOOLS`, then a processed-on-this-device receipt);
+the offline rail state reads `NO UPLINK · LOCAL AI ACTIVE`.
+
 **Chassis domain** (simulated; real adapter = read-only OBD-II, see
 `CHASSIS_RESEARCH.md`) adds engine state, chassis voltage, fuel/DEF,
 coolant, odometer, DTCs — enabling **fusion findings** neither subsystem

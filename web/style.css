@@ -441,6 +441,47 @@ td.dev:hover { color: var(--ink); text-decoration: underline dotted; }
 .g-policy { font-size: 11px; color: var(--muted); line-height: 1.6; min-width: 0; }
 .g-policy div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-policy b { color: var(--ink-2); text-transform: capitalize; }
+.g-policy-details summary {
+  font-size: 11px; color: var(--muted); cursor: pointer; list-style: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.g-policy-details summary::after { content: " ▾"; }
+.g-policy-details[open] summary::after { content: " ▴"; }
+
+/* Event takeover: while an episode is live the compact strip yields to a
+   card sized for a phone screen — the one Guardian moment of the video. */
+.guardian.event { border-top: 2px solid var(--st-warn); }
+.g-card { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gc-title {
+  font-size: 15px; font-weight: 700; letter-spacing: 1.2px;
+  color: var(--st-warn);
+}
+.gc-grid { display: flex; gap: 14px; flex-wrap: wrap; }
+.gc-row { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.gc-row b { font-size: 14px; color: var(--ink); }
+.gc-action { font-size: 13.5px; color: var(--ink); line-height: 1.45;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-action span {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 1.5px;
+  color: var(--muted); margin-right: 6px;
+}
+.gc-action b { font-size: 14px; }
+.gc-result { font-size: 13.5px; font-weight: 600; color: var(--ink-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-result.ok { color: var(--st-good); }
+.gc-result b { color: var(--ink); }
+.gc-receipt {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Voice pipeline visibility */
+#chat-meta.listening { color: var(--st-good); font-weight: 700; }
+.msg .meta.voice-receipt { color: var(--st-good); }
+.chips-row .why-chip {
+  border-color: var(--st-warn); color: var(--st-warn); font-weight: 600;
+}
+.chips-row .why-chip:hover { color: var(--ink); }
 
 .live-ts { color: var(--muted); font-weight: 400; }
 
