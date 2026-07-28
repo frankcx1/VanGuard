@@ -490,16 +490,19 @@ footer {
   z-index: 25;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
   background: #242423;
   border: 1px solid var(--ring);
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6);
   padding: 10px 18px;
-  max-width: min(900px, 92vw);
+  width: min(1040px, 94vw);      /* FIXED width: the Next button never moves */
+  min-height: 64px;
   font-size: 14.5px;
 }
-.storybar .story-controls { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+#story-caption { flex: 1; min-width: 0; }
+.storybar .story-controls { display: flex; gap: 6px; align-items: center; white-space: nowrap; flex: 0 0 auto; }
 .storybar button {
   background: transparent; border: 1px solid var(--baseline); border-radius: 7px;
   color: var(--ink); padding: 5px 12px; cursor: pointer;
