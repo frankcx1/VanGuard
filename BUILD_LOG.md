@@ -599,3 +599,11 @@ What fixed it:
 Screenshot:
 
 -->
+
+## 2026-07-28 — favicon
+
+Added `web/favicon.svg` — camper van in the dashboard's fixed entity colors
+(solar orange body, SOC-blue roof panel) — and linked it from `index.html`.
+Inline SVG, no binary asset, served by the existing `/static` mount; verified
+at 16/32/96 px via headless-Edge render. Browser tabs and the Edge `--app`
+window now show the van instead of the default globe.
