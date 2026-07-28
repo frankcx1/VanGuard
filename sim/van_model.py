@@ -347,6 +347,10 @@ class VanModel:
                 self.gps.start_drive(float(cmd.get("speed_mph", 30.0)))
                 self._drive_started_s = self.sim_s
                 self._drive_fault = False
+                if self.network.mode == 0.0:
+                    # Travel connectivity comes on with the drive — and it
+                    # gives Guardian something real to shed after the fault.
+                    self.network.set_mode("starlink")
             else:
                 self.gps.park_and_reset()
                 self._drive_started_s = None

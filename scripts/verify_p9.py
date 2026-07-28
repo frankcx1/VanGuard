@@ -160,6 +160,17 @@ def detector_checks() -> None:
               shunt={"soc_pct": 97.0})) is None)
     check("no component is blamed",
           "no single component can be blamed" in r["detail"])
+    fault_with_loads = rd(now,
+                          chassis={"engine_running": 1.0, "chassis_v": 14.1},
+                          dcc50s={"alt_power_w": 0.0},
+                          shunt={"soc_pct": 55.0},
+                          network={"mode": 3.0},
+                          inverter={"state": 0.0, "ac_out_w": 0.0})
+    r2 = g.detect_alternator_gap(fault_with_loads)
+    check("fault with travel loads → conserves by shedding (real action)",
+          r2 is not None and r2["severity"] == "warning"
+          and r2["actions"] == ["suspend_starlink"]
+          and "cannot be repaired autonomously" in r2["detail"])
 
     g2 = Guardian(SimpleNamespace(state=None))
     moving = rd(now, chassis={"engine_running": 1.0, "speed_mph": 30.0},
@@ -258,6 +269,11 @@ def api_checks() -> None:
         r = c.post("/v1/chat/completions", json={"messages": [
             {"role": "user", "content": "Are we ready to depart?"}]})
         d = r.json()
+        rr = c.post("/api/guardian/reset")
+        check("guardian take-reset re-arms Protect",
+              rr.status_code == 200 and rr.json()["level"] == "protect"
+              and c.get("/api/guardian").json()["level"] == "protect")
+
         check("departure question → deterministic checklist",
               r.status_code == 200
               and "Departure readiness" in d["choices"][0]["message"]["content"]

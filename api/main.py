@@ -370,6 +370,14 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     async def guardian_dismiss():
         return stamp({"dismissed": await app.state.guardian.dismiss()})
 
+    @app.post("/api/guardian/reset")
+    async def guardian_reset():
+        await app.state.guardian.reset_take()
+        await app.state.store.audit(
+            tool="ui_guardian_reset", args_json="{}", result_hash="-",
+            device="HUMAN", duration_ms=0)
+        return stamp({"reset": True, "level": "protect"})
+
     @app.get("/api/runtime")
     async def runtime():
         # Honest runtime status: only what the loaded pipelines report.

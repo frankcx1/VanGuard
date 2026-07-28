@@ -90,6 +90,9 @@ inference:
 watchdog:
   interval_min: 5
   use_model: true
+guardian:
+  interval_s: 15       # snappy demo cadence: Drive-take fault at 30s →
+  default_level: protect   # Guardian acts ~60s, confirmed ~80s
 "@ | Out-File -Encoding utf8 $cfg
 
 Write-Host "== starting poller + api (port $Port) =="

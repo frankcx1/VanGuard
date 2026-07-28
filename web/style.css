@@ -321,7 +321,10 @@ dl.outlook dd.good { color: var(--st-good); }
   font-size: 11.5px;
   color: var(--ink-2);
 }
-.ch-title { font-size: 10px; letter-spacing: 1.5px; color: var(--muted); font-weight: 700; }
+.ch-title {
+  font-size: 12px; font-weight: 600; letter-spacing: 1px;
+  color: var(--ink-2); text-transform: uppercase;
+}
 
 /* ---- tables -------------------------------------------------------------------- */
 

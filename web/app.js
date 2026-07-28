@@ -738,6 +738,12 @@ $("drive-btn").addEventListener("click", async () => {
   db.dataset.pendingUntil = String(Date.now() + 6000);
   try {
     await postJson("/api/drive", { on });
+    if (!on) {
+      // Park = take reset: guardian cooldowns/episode cleared, autonomy
+      // re-armed to Protect, so the next Drive plays identically.
+      await postJson("/api/guardian/reset", {});
+      refreshGuardian();
+    }
     refreshAudit();
     setTimeout(refreshTrip, 2500);
   } catch (e) { $("trip-pos").textContent = String(e.message); }

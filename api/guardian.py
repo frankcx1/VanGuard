@@ -199,17 +199,27 @@ class Guardian:
             chassis_txt = f"vehicle moving at {speed:.0f}mph"
         else:
             return None
+        # Restraint about the fault itself — nothing can "repair" a charging
+        # path. But conservation is a legitimate response: if nonessential
+        # travel loads are burning watts while charging is down, shed them.
+        shed = []
+        if _get(readings, "network", "mode") == 3.0:
+            shed.append("suspend_starlink")
+        if (_get(readings, "inverter", "state") == 1.0
+                and (_get(readings, "inverter", "ac_out_w") or 0) < 5):
+            shed.append("inverter_standby_off")
         return {
             "id": "charging-path",
-            "severity": "advisory",
+            "severity": "warning" if shed else "advisory",
             "title": "Charging-path anomaly",
             "detail": (f"Mercedes electrical state appears active ({chassis_txt}) "
                        "but no alternator energy is reaching the house system. "
                        "Possible: DC-DC path, BT-2/DCC50S input, or sensor "
                        "disagreement - no single component can be blamed yet. "
-                       "Recommend inspecting the charging path; monitoring "
-                       "conservatively"),
-            "actions": [],                 # intelligent restraint
+                       "The charging path cannot be repaired autonomously; "
+                       + ("conserving instead by shedding nonessential loads"
+                          if shed else "monitoring conservatively")),
+            "actions": shed,
             "proposals": [],
             "metrics": {"alt_w": alt, "engine_running": engine,
                         "chassis_v": chassis_v, "speed_mph": speed},
@@ -416,6 +426,16 @@ class Guardian:
                          self.active["title"], "human dismissed the proposal")
         self.active = None
         return True
+
+    async def reset_take(self) -> None:
+        """Park-button reset: fresh episode state and cleared cooldowns so
+        every demo take plays identically; autonomy re-armed to Protect."""
+        self.pending = {}
+        self.active = None
+        self.last_action_ts = {}
+        self.last_withheld_ts = 0.0
+        self._was_moving = False
+        await self.app.state.store.set_meta("autonomy_level", "protect")
 
     async def status(self) -> dict:
         store = self.app.state.store
