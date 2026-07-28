@@ -939,13 +939,18 @@ function encodeWav(pcm) {
   return new Blob([buf], { type: "audio/wav" });
 }
 
+// Click-to-toggle (hold-to-talk clipped people's speech): click to start,
+// click again to send. Windows dictation (Win+H) also types straight into
+// the focused ask box — on Copilot+ machines that's NPU Fluid Dictation.
 const micBtn = $("chat-mic");
-micBtn.addEventListener("mousedown", () => startRecording().catch(e => {
-  $("chat-input").placeholder = `mic error: ${e.message}`;
-  $("mic-badge").textContent = "🎤 MIC UNAVAILABLE";
-}));
-micBtn.addEventListener("mouseup", () => { if (rec.active) stopRecording(); });
-micBtn.addEventListener("mouseleave", () => { if (rec.active) stopRecording(); });
+micBtn.addEventListener("click", () => {
+  if (rec.active) { stopRecording(); return; }
+  $("chat-input").focus();
+  startRecording().catch(e => {
+    $("chat-input").placeholder = `mic error: ${e.message}`;
+    $("mic-badge").textContent = "🎤 MIC UNAVAILABLE";
+  });
+});
 
 /* ---- sparklines ---------------------------------------------------------------------- */
 

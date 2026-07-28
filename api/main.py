@@ -538,10 +538,18 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         async with app.state.stt_lock:
             if app.state.stt is None:
                 from inference.stt import SttEngine
-                stt_dir = Path(__file__).resolve().parent.parent / cfg.get(
-                    "stt", {}).get("model_dir", "ov_whisper_base_en")
-                if not (stt_dir / "openvino_encoder_model.xml").exists():
-                    raise HTTPException(503, f"whisper not exported: {stt_dir}")
+                root = Path(__file__).resolve().parent.parent
+                configured = (cfg.get("stt") or {}).get("model_dir")
+                # Prefer the more accurate small model when exported;
+                # base remains the fallback.
+                candidates = ([configured] if configured else
+                              ["ov_whisper_small_en", "ov_whisper_base_en"])
+                stt_dir = next(
+                    (root / c for c in candidates
+                     if (root / c / "openvino_encoder_model.xml").exists()),
+                    None)
+                if stt_dir is None:
+                    raise HTTPException(503, "whisper not exported")
                 app.state.stt = await run_in_threadpool(SttEngine, str(stt_dir))
         try:
             text = await run_in_threadpool(app.state.stt.transcribe_wav, wav)
