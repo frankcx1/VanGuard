@@ -53,6 +53,7 @@ One autonomous event, one visibly local voice exchange, one receipt.
 | 0:45–1:00 | **Guardian event card** takes over the strip: DETECTED → VERIFIED → POLICY MATCHED → ACTIONED → RECOVERY CONFIRMED, load reduced, forecast improved, decision receipt underneath | "The Guardian can't fix a charging path, so it does the one legitimate thing: sheds the loads it can no longer afford. Detected, verified, actioned, recovery confirmed — every stage logged." |
 | 1:00–1:15 | Tap the amber **why did you do that?** chip (it appears by itself after the action) — or ask it by voice via 🎤 | the answer is read back from the Guardian log, with the local pipeline banner over the reply |
 | 1:15–1:20 | Footer + receipt line | "Telemetry, voice, reasoning, decisions — processed on this device. Zero external calls." |
+| +10s | **The EdgeForwardAI beat** (over the rail, or b-roll of the Surface) | "And here's the part that matters for builders: none of this was experimental. Intel's silicon and OpenVINO, Microsoft's on-device dictation, open weights from the Qwen and Whisper teams — a defined, functioning path from download to NPU. The edge isn't the fallback anymore. It's the forward position." |
 
 **The offline beat (optional, +8s):** switch Network to **Off** — the rail
 flips to **NO UPLINK · LOCAL AI ACTIVE**. Ask the voice question *then*.
