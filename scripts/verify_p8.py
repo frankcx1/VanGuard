@@ -114,7 +114,8 @@ def flow_checks() -> None:
         c.post("/api/guardian/run")
         s3 = c.get("/api/guardian").json()
         check("confirmation stage records before/after",
-              any(e["stage"] == "confirmed" and "improved from" in e["detail"]
+              any(e["stage"] == "confirmed" and "→" in e["detail"]
+                  and "battery net power" in e["detail"]
                   for e in s3["events"]))
         c.post("/api/guardian/run")
         n_eps = len({e["episode"] for e in

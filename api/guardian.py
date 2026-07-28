@@ -291,9 +291,9 @@ class Guardian:
             soc_after = outlook.get("soc_at_sunrise_pct")
             await self._emit(
                 self.active["episode"], "confirmed", self.active["title"],
-                f"battery drain reduced from {-before.get('net_w', 0):.0f}W to "
-                f"{-(net_after or 0):.0f}W; battery charge forecast at sunrise "
-                f"improved from {before.get('soc_at_sunrise_pct', 0):.0f}% to "
+                f"battery net power {before.get('net_w', 0):+.0f}W → "
+                f"{(net_after or 0):+.0f}W; sunrise battery forecast "
+                f"{before.get('soc_at_sunrise_pct', 0):.0f}% → "
                 f"{(soc_after or 0):.0f}%",
                 {"net_w_before": before.get("net_w"), "net_w_after": net_after,
                  "sunrise_before": before.get("soc_at_sunrise_pct"),
@@ -329,6 +329,12 @@ class Guardian:
                 continue
             if self.active and self.active["risk_id"] == rid:
                 continue    # episode in flight or confirmed-awaiting-resolution
+            # Uniform before-metrics so every confirmation has a real
+            # baseline regardless of which detector fired.
+            risk["metrics"].setdefault("net_w",
+                                       derived.net_power_w(readings) or 0.0)
+            risk["metrics"].setdefault("soc_at_sunrise_pct",
+                                       outlook.get("soc_at_sunrise_pct", 0.0))
             await self._run_episode(risk, readings, level, cfg)
         for rid in list(self.pending):
             if rid not in {r["id"] for r in risks}:
