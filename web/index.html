@@ -119,17 +119,19 @@
     <details class="assumptions"><summary>assumptions</summary><div id="ol-assumptions"></div></details>
   </section>
 
-  <section class="tile">
-    <div class="tile-head"><h2>Trip</h2><span id="trip-state" class="status plain"></span></div>
-    <div class="big"><span id="trip-mi">–</span><span class="unit">mi today</span></div>
-    <div class="row sub2"><span id="trip-pos">–</span></div>
-    <ul id="poi-list"></ul>
-    <div class="chassis" id="chassis-block">
-      <span class="ch-title">CHASSIS · read-only</span>
-      <span id="chassis-line1">–</span>
-      <span id="chassis-line2"></span>
-      <span id="chassis-line3"></span>
+  <section class="tile net-tile">
+    <div class="tile-head"><h2>Network</h2><span id="net-state" class="status plain">offline</span></div>
+    <div class="net-row">
+      <span id="net-bars" class="net-bars" aria-hidden="true">▂▄▆█</span>
+      <span id="net-stats">–</span>
     </div>
+    <div class="seg" role="group" aria-label="Uplink">
+      <button data-net="off">Off</button>
+      <button data-net="cell">5G</button>
+      <button data-net="wifi">Wi-Fi</button>
+      <button data-net="starlink">Starlink</button>
+    </div>
+    <div class="row sub2"><span id="net-dish">uplink is internet only · AI &amp; telemetry stay on device</span></div>
   </section>
 
   <section class="tile wide chat-tile">
@@ -174,34 +176,32 @@
     </div>
   </section>
 
+  <section class="tile scrolly">
+    <div class="tile-head"><h2>Alerts</h2><span id="alert-count" class="status plain"></span></div>
+    <ul id="alert-list"></ul>
+  </section>
+
   <div class="stack">
-    <section class="tile net-tile">
-      <div class="tile-head"><h2>Network</h2><span id="net-state" class="status plain">offline</span></div>
-      <div class="net-row">
-        <span id="net-bars" class="net-bars" aria-hidden="true">▂▄▆█</span>
-        <span id="net-stats">–</span>
+    <section class="tile grow">
+      <div class="tile-head"><h2>Trip</h2><span id="trip-state" class="status plain"></span></div>
+      <div class="big"><span id="trip-mi">–</span><span class="unit">mi today</span></div>
+      <div class="row sub2"><span id="trip-pos">–</span></div>
+      <ul id="poi-list"></ul>
+      <div class="chassis" id="chassis-block">
+        <span class="ch-title">CHASSIS · read-only</span>
+        <span id="chassis-line1">–</span>
+        <span id="chassis-line2"></span>
+        <span id="chassis-line3"></span>
       </div>
-      <div class="seg" role="group" aria-label="Uplink">
-        <button data-net="off">Off</button>
-        <button data-net="cell">5G</button>
-        <button data-net="wifi">Wi-Fi</button>
-        <button data-net="starlink">Starlink</button>
-      </div>
-      <div class="row sub2"><span id="net-dish">uplink is internet only · AI &amp; telemetry stay on device</span></div>
     </section>
 
-    <section class="tile scrolly">
-      <div class="tile-head"><h2>Alerts</h2><span id="alert-count" class="status plain"></span></div>
-      <ul id="alert-list"></ul>
+    <section class="tile diag-tile">
+      <div class="tile-head"><h2>Diagnostics</h2></div>
+      <p id="diag-summary" class="diag-summary">–</p>
+      <p class="row sub2"><span id="diag-runtime">–</span></p>
+      <button id="diag-open">Open diagnostics</button>
     </section>
   </div>
-
-  <section class="tile diag-tile">
-    <div class="tile-head"><h2>Diagnostics</h2></div>
-    <p id="diag-summary" class="diag-summary">–</p>
-    <p class="row sub2"><span id="diag-runtime">–</span></p>
-    <button id="diag-open">Open diagnostics</button>
-  </section>
 </main>
 
 <footer><span id="src-line">–</span></footer>

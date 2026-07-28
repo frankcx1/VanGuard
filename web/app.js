@@ -572,6 +572,15 @@ async function refreshRuntime() {
 
 const G_STAGES = ["detected", "verified", "decided", "acted", "confirmed"];
 
+// Plain-language meaning of each autonomy level, shown with the selector.
+const G_LEVELS = {
+  observe:   "watches and logs only — never recommends, never acts",
+  advise:    "explains risks and recommends actions — you do everything",
+  ask:       "prepares the fix and waits for your approval",
+  protect:   "fixes preauthorized, reversible things on its own; asks for the rest",
+  emergency: "protect + immediate electrical interlocks (e.g. cooktop cutoff)",
+};
+
 async function refreshGuardian() {
   const g = await (await fetch("/api/guardian")).json();
   if ($("g-level-sel").value !== g.level) $("g-level-sel").value = g.level;
@@ -609,8 +618,15 @@ async function refreshGuardian() {
     body.innerHTML = "Current risk: <b>none</b> · watching reserve forecast, " +
       "voltage sag, charging path, and sensor health";
   }
-  $("g-policy").textContent =
-    `auto: ${g.allowed_auto.join(" · ")}  |  approval: ${g.requires_approval.join(" · ")}`;
+  $("g-policy").innerHTML =
+    `<b>${escapeHtml(g.level)}</b>: ${escapeHtml(G_LEVELS[g.level] ?? "")}<br>` +
+    `can do alone: ${escapeHtml(g.allowed_auto.join(" · "))}<br>` +
+    `asks first: ${escapeHtml(g.requires_approval.join(" · "))} · ` +
+    `never: ${escapeHtml((g.never ?? []).slice(0, 2).join(" · "))}`;
+  const sel = $("g-level-sel");
+  sel.title = Object.entries(G_LEVELS)
+    .map(([k, v]) => `${k}: ${v}`).join("\n");
+  Array.from(sel.options).forEach(o => { o.title = G_LEVELS[o.value] ?? ""; });
 }
 
 $("g-level-sel").addEventListener("change", async () => {
