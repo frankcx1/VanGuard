@@ -132,6 +132,7 @@ class VanModel:
 
     TANK_GAL = 24.5              # 2022 Sprinter 3500XD [verified-external]
     AVG_MPG = 16.0               # range basis, conservative
+    DRIVE_FAULT_AFTER_S = 30.0   # scripted fault timing for demo drives
 
     def __init__(self, scenario, rng: random.Random, loads: LoadBank,
                  hvac=None, gps=None):
@@ -171,6 +172,11 @@ class VanModel:
         self.boost_psi = 0.0
         self.fuel_rate_gph = 0.0
         self.engine_runtime_s = 0.0
+        # Interactive demo drive (Drive button): a scripted charging-path
+        # fault fires partway into every take, so the alert → insight →
+        # Guardian cascade happens on cue. Park clears it and resets.
+        self._drive_started_s: float | None = None
+        self._drive_fault = False
         self.battery = Battery(scenario.start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
@@ -246,7 +252,11 @@ class VanModel:
         else:                   # human override: engine idling / shut off
             engine_on = alt_sw
         self.engine_running = engine_on
-        if self.scn.charging_fault:
+        if (self._drive_started_s is not None and self.gps is not None
+                and self.gps.free_drive and not self._drive_fault
+                and self.sim_s - self._drive_started_s >= self.DRIVE_FAULT_AFTER_S):
+            self._drive_fault = True    # the scripted mid-drive fault
+        if self.scn.charging_fault or self._drive_fault:
             # The Mercedes side is healthy; the DC-DC path to the house
             # battery is not. Neither subsystem alone can explain this —
             # that's the point of the fusion finding.
@@ -335,8 +345,12 @@ class VanModel:
                 return False
             if cmd.get("on"):
                 self.gps.start_drive(float(cmd.get("speed_mph", 30.0)))
+                self._drive_started_s = self.sim_s
+                self._drive_fault = False
             else:
-                self.gps.stop_drive()
+                self.gps.park_and_reset()
+                self._drive_started_s = None
+                self._drive_fault = False
             return True
         if cmd.get("target") == "load_switch":
             name = cmd.get("name")

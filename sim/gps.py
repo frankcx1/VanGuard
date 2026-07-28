@@ -88,6 +88,7 @@ class GpsTrack:
             self._pts = None
             self.lat, self.lon = position or (49.0770, -125.8120)  # Green Point CG, Tofino
         self.trip_mi = 0.0
+        self._home = (self.lat, self.lon)   # where Park resets a demo drive to
         # Free-drive (interactive): cruise from wherever we are with a
         # gently wandering heading — no route required.
         self.free_drive = False
@@ -100,6 +101,19 @@ class GpsTrack:
 
     def stop_drive(self) -> None:
         self.free_drive = False
+
+    def park_and_reset(self) -> None:
+        """Park button: end the drive and reset the take. A free drive
+        returns home (repeatable demo starts); a route drive halts in
+        place. Trip odometer zeroes either way."""
+        was_free = self.free_drive
+        self.free_drive = False
+        if self._pts is not None:
+            self._leg = len(self._pts) - 1      # halt the route where we are
+        elif was_free:
+            self.lat, self.lon = self._home
+        self.trip_mi = 0.0
+        self.speed_mph = 0.0
 
     @property
     def on_route(self) -> bool:

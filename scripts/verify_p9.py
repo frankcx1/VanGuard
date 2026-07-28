@@ -99,22 +99,47 @@ def detector_checks() -> None:
     dv = SimSource(get_scenario("driveway"))
     dv.advance(60)
     ok = dv.apply_command({"target": "drive", "on": True, "speed_mph": 30})
-    dv.advance(120)
-    ems_d = dv.emit(1_770_000_180)
+    dv.advance(20)                          # inside the healthy first 30s
+    ems_d = dv.emit(1_770_000_080)
     chd = by_source(ems_d, "chassis")
     lat0 = by_source(ems_d, "gps").get("lat")
     check("drive command: engine starts, van moves, alternator charges",
           ok and chd.get("engine_running") == 1.0 and chd.get("rpm", 0) > 1000
           and by_source(ems_d, "dcc50s").get("alt_power_w", 0) > 300,
           f"rpm={chd.get('rpm')}, alt={by_source(ems_d, 'dcc50s').get('alt_power_w')}W")
-    dv.advance(600)
-    moved = abs(by_source(dv.emit(1_770_000_780), "gps").get("lat", 0) - lat0)
+    dv.advance(700)
+    ems_m = dv.emit(1_770_000_780)
+    moved = abs(by_source(ems_m, "gps").get("lat", 0) - lat0)
     check("position actually travels", moved > 0.02, f"Δlat={moved:.4f}")
+
+    # The scripted demo fault: alternator vanishes ~30s into every drive
+    # while the chassis stays healthy — the alert/insight/Guardian cue.
+    chm = by_source(ems_m, "chassis")
+    check("scripted charging fault fires mid-drive (engine fine, alt 0W)",
+          chm.get("engine_running") == 1.0
+          and by_source(ems_m, "dcc50s").get("alt_power_w") == 0.0
+          and chm.get("chassis_v", 0) > 13.8,
+          f"alt={by_source(ems_m, 'dcc50s').get('alt_power_w')}W, "
+          f"chassis={chm.get('chassis_v')}V")
+
+    home = get_scenario("driveway").position
     dv.apply_command({"target": "drive", "on": False})
     dv.advance(30)
-    chp = by_source(dv.emit(1_770_000_810), "chassis")
-    check("park command: engine off, stream zeroes",
+    ems_p = dv.emit(1_770_000_810)
+    chp = by_source(ems_p, "chassis")
+    gpp = by_source(ems_p, "gps")
+    check("park: engine off, stream zeroes",
           chp.get("engine_running") == 0.0 and chp.get("rpm") == 0.0)
+    check("park resets the take: trip zeroed, back home, fault cleared",
+          gpp.get("trip_mi") == 0.0
+          and abs(gpp.get("lat", 0) - home[0]) < 0.001)
+    dv.apply_command({"target": "drive", "on": True, "speed_mph": 30})
+    dv.advance(15)
+    ems_2 = dv.emit(1_770_000_830)
+    check("next drive starts healthy (no fault for the first 30s)",
+          by_source(ems_2, "dcc50s").get("alt_power_w", 0) > 300,
+          f"alt={by_source(ems_2, 'dcc50s').get('alt_power_w')}W")
+    dv.apply_command({"target": "drive", "on": False})
 
     print("== fusion detectors ==")
     g = Guardian(SimpleNamespace(state=None))
