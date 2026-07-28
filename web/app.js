@@ -939,17 +939,26 @@ function encodeWav(pcm) {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-// Click-to-toggle (hold-to-talk clipped people's speech): click to start,
-// click again to send. Windows dictation (Win+H) also types straight into
-// the focused ask box — on Copilot+ machines that's NPU Fluid Dictation.
+// Tablet-first dictation: tapping 🎤 focuses the ask box and asks the
+// backend to synthesize Win+H — Windows Fluid Dictation (on-device NPU)
+// opens straight into the field. No keyboard needed. If that endpoint is
+// unavailable, fall back to the local Whisper recorder (click-toggle).
 const micBtn = $("chat-mic");
-micBtn.addEventListener("click", () => {
+micBtn.addEventListener("click", async () => {
   if (rec.active) { stopRecording(); return; }
   $("chat-input").focus();
-  startRecording().catch(e => {
-    $("chat-input").placeholder = `mic error: ${e.message}`;
-    $("mic-badge").textContent = "🎤 MIC UNAVAILABLE";
-  });
+  try {
+    await postJson("/api/dictate", {});
+    $("mic-badge").textContent = "🎤 WINDOWS DICTATION";
+    setTimeout(() => {
+      if (!rec.active) $("mic-badge").textContent = "🎤 MIC READY";
+    }, 8000);
+  } catch {
+    startRecording().catch(e => {
+      $("chat-input").placeholder = `mic error: ${e.message}`;
+      $("mic-badge").textContent = "🎤 MIC UNAVAILABLE";
+    });
+  }
 });
 
 /* ---- sparklines ---------------------------------------------------------------------- */

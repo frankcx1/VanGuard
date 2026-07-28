@@ -60,17 +60,18 @@ Repeat as many takes as you need — identical every time.
 Contrast shot: set autonomy to **Advise** before a take → Guardian
 recommends the same plan but touches nothing.
 
-## Dictation (two on-device paths)
+## Dictation (tablet-first, no keyboard needed)
 
-1. **Best: Win+H (Windows Fluid Dictation).** Click the ask box, press
-   **Win+H**, speak — Copilot+ on-device dictation with live punctuation
-   cleanup. (One-time: enable "fluid dictation" in the voice-typing
-   flyout's settings gear if it's off.) Click **Ask** to send.
-2. **🎤 button: local Whisper** (now whisper-small — much more accurate
-   than before). Click to start, click again to stop & send.
+**Tap 🎤** — the backend synthesizes Win+H, so Windows Fluid Dictation
+(Copilot+ on-device, live punctuation cleanup) opens straight into the
+ask box. Speak, tap the flyout's mic (or 🎤 again) to stop, tap **Ask**.
+One-time setup: in the voice-typing flyout's ⚙, enable "fluid dictation".
 
-Both stay fully on-device. Avoided on purpose: browser Web Speech API —
-it ships audio to a cloud service.
+Fallback: if the dictate endpoint is unavailable the 🎤 becomes a local
+Whisper recorder (whisper-small, click to start / click to send).
+
+Both paths stay fully on-device. Avoided on purpose: browser Web Speech
+API — it ships audio to a cloud service.
 
 ## Good voice/typed questions (all answered on-device)
 

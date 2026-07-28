@@ -528,6 +528,27 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             "nearby": nearby_pois(gps["lat"], gps["lon"], radius_mi),
         })
 
+    @app.post("/api/dictate")
+    async def dictate():
+        """Tablet-mode dictation: synthesize Win+H at OS level so Windows
+        voice typing (Copilot+ Fluid Dictation, on-device) opens into the
+        browser's focused ask box — no keyboard required. Loopback-only
+        API on the same machine, so the keystroke lands on this device."""
+        import platform
+        if platform.system() != "Windows":
+            raise HTTPException(501, "Windows voice typing unavailable")
+
+        def _fire():
+            import ctypes
+            keyup = 0x0002
+            u = ctypes.WinDLL("user32")
+            u.keybd_event(0x5B, 0, 0, 0)        # Win down
+            u.keybd_event(0x48, 0, 0, 0)        # H down
+            u.keybd_event(0x48, 0, keyup, 0)    # H up
+            u.keybd_event(0x5B, 0, keyup, 0)    # Win up
+        await run_in_threadpool(_fire)
+        return stamp({"dictation": "toggled"})
+
     @app.post("/api/transcribe")
     async def transcribe(request: Request):
         wav = await request.body()
