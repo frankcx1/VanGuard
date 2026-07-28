@@ -346,7 +346,15 @@ td.dev:hover { color: var(--ink); text-decoration: underline dotted; }
 
 .chat-tile { min-height: 0; overflow: hidden; }
 .guardian { flex-shrink: 0; }
-.chips-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips-row {
+  display: flex; gap: 6px;
+  flex-wrap: nowrap;             /* one line always — wrapping stole the
+                                    Guardian strip's height on short screens */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chips-row::-webkit-scrollbar { display: none; }
+.chips-row button { white-space: nowrap; flex: 0 0 auto; }
 .chips-row button {
   background: transparent; border: 1px solid var(--baseline); border-radius: 20px;
   color: var(--ink-2); padding: 3px 11px; cursor: pointer; font-size: 12px;
@@ -398,10 +406,10 @@ td.dev:hover { color: var(--ink); text-decoration: underline dotted; }
 .guardian {
   margin-top: auto;
   border-top: 1px solid var(--grid);
-  padding-top: 8px;
+  padding-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .g-head { display: flex; align-items: center; gap: 10px; }
 .g-title { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--ink-2); }

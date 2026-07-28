@@ -17,6 +17,8 @@ param(
     [int]$Port = 8000,
     [switch]$Stop,
     [switch]$NoBrowser,
+    [switch]$Kiosk,              # open Edge in fullscreen kiosk (no chrome;
+                                 # close with Alt+F4)
     [switch]$NPU,                # serve the LLM on the NPU (real; ~90s compile)
     [switch]$Presentation        # filming mode: hides SIM labels in the UI.
                                  # Data-layer stamps stay; see BUILD_LOG.
@@ -129,4 +131,13 @@ if ($Presentation) {
 Write-Host ""
 Write-Host "READY  →  http://127.0.0.1:$Port   scenario=$Scenario (SIM badge on, as it must be)"
 Write-Host "Stop with:  .\scripts\demo.ps1 -Stop"
-if (-not $NoBrowser) { Start-Process "http://127.0.0.1:$Port" }
+if ($Kiosk) {
+    $edge = @("C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+              "C:\Program Files\Microsoft\Edge\Application\msedge.exe") |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($edge) {
+        Start-Process $edge -ArgumentList "--new-window", "--kiosk",
+            "http://127.0.0.1:$Port", "--edge-kiosk-type=fullscreen"
+        Write-Host "kiosk mode: Alt+F4 to exit."
+    } else { Start-Process "http://127.0.0.1:$Port" }
+} elseif (-not $NoBrowser) { Start-Process "http://127.0.0.1:$Port" }
