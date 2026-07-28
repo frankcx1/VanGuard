@@ -337,7 +337,8 @@ td.dev:hover { color: var(--ink); text-decoration: underline dotted; }
 
 /* ---- chat ----------------------------------------------------------------------- */
 
-.chat-tile { min-height: 0; }
+.chat-tile { min-height: 0; overflow: hidden; }
+.guardian { flex-shrink: 0; }
 .chips-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .chips-row button {
   background: transparent; border: 1px solid var(--baseline); border-radius: 20px;
