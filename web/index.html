@@ -134,7 +134,12 @@
   </section>
 
   <section class="tile">
-    <div class="tile-head"><h2>Trip</h2><span id="trip-state" class="status plain"></span></div>
+    <div class="tile-head"><h2>Trip</h2>
+      <span class="trip-head-right">
+        <span id="trip-state" class="status plain"></span>
+        <button id="drive-btn" aria-pressed="false" title="Start/stop a simulated drive from the current position">▶ Drive</button>
+      </span>
+    </div>
     <div class="big"><span id="trip-mi">–</span><span class="unit">mi today</span></div>
     <div class="row sub2"><span id="trip-pos">–</span></div>
     <ul id="poi-list"></ul>

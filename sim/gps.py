@@ -88,13 +88,40 @@ class GpsTrack:
             self._pts = None
             self.lat, self.lon = position or (49.0770, -125.8120)  # Green Point CG, Tofino
         self.trip_mi = 0.0
+        # Free-drive (interactive): cruise from wherever we are with a
+        # gently wandering heading — no route required.
+        self.free_drive = False
+        self._free_cruise = 30.0
+        self._free_heading = self._rng.uniform(0.0, 360.0)
+
+    def start_drive(self, speed_mph: float = 30.0) -> None:
+        self.free_drive = True
+        self._free_cruise = max(5.0, min(70.0, speed_mph))
+
+    def stop_drive(self) -> None:
+        self.free_drive = False
+
+    @property
+    def on_route(self) -> bool:
+        return self._pts is not None and self._leg < len(self._pts) - 1
 
     @property
     def moving(self) -> bool:
-        return self._pts is not None and self._leg < len(self._pts) - 1
+        return self.free_drive or self.on_route
 
     def step(self, dt_s: float) -> None:
-        if not self.moving:
+        if self.free_drive:
+            self.speed_mph = max(8.0, self._free_cruise + self._rng.uniform(-5.0, 5.0))
+            self._free_heading = (self._free_heading
+                                  + self._rng.uniform(-4.0, 4.0)) % 360.0
+            self.heading = self._free_heading
+            d_mi = self.speed_mph * dt_s / 3600.0
+            self.trip_mi += d_mi
+            self.lat += d_mi / 69.0 * math.cos(math.radians(self.heading))
+            self.lon += d_mi / (69.0 * max(0.2, math.cos(math.radians(self.lat)))) \
+                * math.sin(math.radians(self.heading))
+            return
+        if not self.on_route:
             self.speed_mph = 0.0
             return
         self.speed_mph = max(15.0, self._cruise + self._rng.uniform(-6.0, 6.0))

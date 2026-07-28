@@ -95,6 +95,27 @@ def chassis_sim_checks() -> None:
 
 
 def detector_checks() -> None:
+    print("== interactive drive (free-drive mode) ==")
+    dv = SimSource(get_scenario("driveway"))
+    dv.advance(60)
+    ok = dv.apply_command({"target": "drive", "on": True, "speed_mph": 30})
+    dv.advance(120)
+    ems_d = dv.emit(1_770_000_180)
+    chd = by_source(ems_d, "chassis")
+    lat0 = by_source(ems_d, "gps").get("lat")
+    check("drive command: engine starts, van moves, alternator charges",
+          ok and chd.get("engine_running") == 1.0 and chd.get("rpm", 0) > 1000
+          and by_source(ems_d, "dcc50s").get("alt_power_w", 0) > 300,
+          f"rpm={chd.get('rpm')}, alt={by_source(ems_d, 'dcc50s').get('alt_power_w')}W")
+    dv.advance(600)
+    moved = abs(by_source(dv.emit(1_770_000_780), "gps").get("lat", 0) - lat0)
+    check("position actually travels", moved > 0.02, f"Δlat={moved:.4f}")
+    dv.apply_command({"target": "drive", "on": False})
+    dv.advance(30)
+    chp = by_source(dv.emit(1_770_000_810), "chassis")
+    check("park command: engine off, stream zeroes",
+          chp.get("engine_running") == 0.0 and chp.get("rpm") == 0.0)
+
     print("== fusion detectors ==")
     g = Guardian(SimpleNamespace(state=None))
     now = int(time.time())

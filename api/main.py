@@ -72,6 +72,11 @@ class NetworkCommand(BaseModel):
     mode: Literal["off", "cell", "wifi", "starlink"]
 
 
+class DriveCommand(BaseModel):
+    on: bool
+    speed_mph: float | None = Field(default=None, ge=5, le=70)
+
+
 DEFAULT_ALERT_RULES = {
     "soc_warn_pct": 30.0,
     "soc_crit_pct": 15.0,
@@ -459,6 +464,19 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
         await app.state.store.audit(
             tool="ui_load_switch", args_json=json.dumps(payload),
+            result_hash="-", device="HUMAN", duration_ms=0)
+        return stamp({"queued": cmd_id})
+
+    @app.post("/api/drive")
+    async def drive(body: DriveCommand):
+        if cfg["source"] != "sim":
+            raise HTTPException(403, "driving is a sim-only demo control")
+        payload = {"target": "drive", "on": body.on}
+        if body.speed_mph:
+            payload["speed_mph"] = body.speed_mph
+        cmd_id = await app.state.store.enqueue_command(json.dumps(payload))
+        await app.state.store.audit(
+            tool="ui_drive", args_json=json.dumps(payload),
             result_hash="-", device="HUMAN", duration_ms=0)
         return stamp({"queued": cmd_id})
 

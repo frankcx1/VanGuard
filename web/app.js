@@ -611,18 +611,21 @@ async function refreshGuardian() {
   const ev = (g.events ?? [])[0];
   if (active && ev) {
     body.innerHTML = `<b>${escapeHtml(ev.title)}</b> — ${escapeHtml(ev.detail)}`;
+    body.title = `${ev.title} — ${ev.detail}`;
   } else if (ev && (Date.now() / 1000 - ev.ts) < 3600) {
     const t = new Date(ev.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     body.innerHTML = `<b>${ev.stage.toUpperCase()} ${t}</b> · ${escapeHtml(ev.title)} — ${escapeHtml(ev.detail)}`;
+    body.title = `${ev.title} — ${ev.detail}`;
   } else {
     body.innerHTML = "Current risk: <b>none</b> · watching reserve forecast, " +
       "voltage sag, charging path, and sensor health";
+    body.title = "";
   }
   $("g-policy").innerHTML =
-    `<b>${escapeHtml(g.level)}</b>: ${escapeHtml(G_LEVELS[g.level] ?? "")}<br>` +
-    `can do alone: ${escapeHtml(g.allowed_auto.join(" · "))}<br>` +
-    `asks first: ${escapeHtml(g.requires_approval.join(" · "))} · ` +
-    `never: ${escapeHtml((g.never ?? []).slice(0, 2).join(" · "))}`;
+    `<div title="${escapeHtml(G_LEVELS[g.level] ?? "")}"><b>${escapeHtml(g.level)}</b>: ${escapeHtml(G_LEVELS[g.level] ?? "")}</div>` +
+    `<div title="can do alone: ${escapeHtml(g.allowed_auto.join(" · "))}">can do alone: ${escapeHtml(g.allowed_auto.join(" · "))}</div>` +
+    `<div title="asks first: ${escapeHtml(g.requires_approval.join(" · "))} | never: ${escapeHtml((g.never ?? []).join(" · "))}">` +
+    `asks first: ${escapeHtml(g.requires_approval.join(" · "))} · never: ${escapeHtml((g.never ?? []).slice(0, 2).join(" · "))}</div>`;
   const sel = $("g-level-sel");
   sel.title = Object.entries(G_LEVELS)
     .map(([k, v]) => `${k}: ${v}`).join("\n");
@@ -713,11 +716,32 @@ async function refreshTrip() {
   $("trip-mi").textContent = t.miles_today.toFixed(1);
   $("trip-state").textContent = t.fix.moving
     ? `moving · ${t.fix.speed_mph.toFixed(0)} mph` : "parked";
+  const db = $("drive-btn");
+  if (!(db.dataset.pendingUntil && Date.now() < Number(db.dataset.pendingUntil))) {
+    db.textContent = t.fix.moving ? "⏸ Park" : "▶ Drive";
+    db.classList.toggle("on", t.fix.moving);
+    db.dataset.on = t.fix.moving ? "1" : "0";
+    db.setAttribute("aria-pressed", t.fix.moving ? "true" : "false");
+  }
   $("trip-pos").textContent = `${t.fix.lat.toFixed(4)}, ${t.fix.lon.toFixed(4)}`;
   $("poi-list").innerHTML = (t.nearby ?? []).slice(0, 3).map(p =>
     `<li>${escapeHtml(p.name)} <span class="dist">· ${p.type} · ${p.dist_mi} mi</span></li>`
   ).join("");
 }
+
+$("drive-btn").addEventListener("click", async () => {
+  const on = $("drive-btn").dataset.on !== "1";
+  const db = $("drive-btn");
+  db.textContent = on ? "⏸ Park" : "▶ Drive";
+  db.classList.toggle("on", on);
+  db.dataset.on = on ? "1" : "0";
+  db.dataset.pendingUntil = String(Date.now() + 6000);
+  try {
+    await postJson("/api/drive", { on });
+    refreshAudit();
+    setTimeout(refreshTrip, 2500);
+  } catch (e) { $("trip-pos").textContent = String(e.message); }
+});
 
 /* ---- diagnostics ---------------------------------------------------------------------- */
 

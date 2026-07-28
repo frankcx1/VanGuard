@@ -241,9 +241,8 @@ class VanModel:
         # bug: it's what breaks load derivation on shore, PLAN §3).
         i_pv = self.pv_w * CHARGE_EFFICIENCY / v
         alt_sw = self.switches["alternator"]
-        if alt_sw is None:      # auto: engine runs while driving the route
-            engine_on = self.scn.alternator_a > 0 and (
-                self.gps is None or self.scn.route is None or self.gps.moving)
+        if alt_sw is None:      # auto: the engine runs while the van moves
+            engine_on = self.gps is not None and self.gps.moving
         else:                   # human override: engine idling / shut off
             engine_on = alt_sw
         self.engine_running = engine_on
@@ -331,6 +330,14 @@ class VanModel:
             return True
         if cmd.get("target") == "network":
             return self.network.set_mode(cmd.get("mode", ""))
+        if cmd.get("target") == "drive":
+            if self.gps is None:
+                return False
+            if cmd.get("on"):
+                self.gps.start_drive(float(cmd.get("speed_mph", 30.0)))
+            else:
+                self.gps.stop_drive()
+            return True
         if cmd.get("target") == "load_switch":
             name = cmd.get("name")
             if name not in ("fridge", "freezer"):
