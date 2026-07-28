@@ -129,6 +129,18 @@ function setChassisBlock(rd) {
     `fuel ${(ch.fuel_pct?.value ?? 0).toFixed(0)}% · DEF ${(ch.def_pct?.value ?? 0).toFixed(0)}% · ` +
     `coolant ${cToF(ch.coolant_c?.value ?? 0).toFixed(0)}°F · ` +
     `DTC ${(ch.dtc_count?.value ?? 0).toFixed(0)}`;
+  if (eng) {
+    const gph = ch.fuel_rate_gph?.value ?? 0;
+    const mpg = spd > 2 && gph > 0.1 ? spd / gph : null;
+    $("chassis-line3").textContent =
+      `${(ch.rpm?.value ?? 0).toFixed(0)} rpm · ${(ch.engine_load_pct?.value ?? 0).toFixed(0)}% load · ` +
+      `${(ch.boost_psi?.value ?? 0).toFixed(1)} psi boost` +
+      (mpg ? ` · ${mpg.toFixed(1)} mpg` : ` · ${gph.toFixed(1)} gph idle`) +
+      ` · range ${(ch.range_mi?.value ?? 0).toFixed(0)} mi`;
+  } else {
+    $("chassis-line3").textContent =
+      `range ${(ch.range_mi?.value ?? 0).toFixed(0)} mi at fill-up pace`;
+  }
 }
 
 /* ---- network -------------------------------------------------------------- */

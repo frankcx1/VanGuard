@@ -532,6 +532,19 @@ Verification: `verify_p9.py` **23/23**; full regression green (p1/p2/p4/
 p5/p6/p8). Reserve-protection also observed completing its full loop live
 (122W→81W, sunrise 5%→20%, then *resolved* when the risk cleared).
 
+**P9b (same evening) — OBD engine stream.** Everything else the BLE
+dongle's standard PIDs would give, simulated coherently: speed → RPM,
+load (with terrain wander) → boost and fuel rate, fuel rate → tank level,
+tank → range at 16 mpg. Emitted on the chassis source (rpm,
+engine_load_pct, boost_psi, fuel_rate_gph, range_mi), third CHASSIS line
+while driving ("1930 rpm · 58% load · 10.8 psi boost · 17.1 mpg · range
+258 mi"), get_chassis tool extended, research table gains the PID rows
+(fuel rate 0x5E flagged [UNVERIFIED] on diesels). One paid lesson: class
+constants pasted mid-__init__ broke the module — and a parked GPS now
+correctly reports near-zero speed jitter (the old 0.2-sigma noise
+occasionally tripped the parked check when RNG order shifted).
+verify_p9 → **27/27**, full regression green.
+
 ---
 
 <!-- Template for subsequent entries:

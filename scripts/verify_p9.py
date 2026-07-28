@@ -63,6 +63,23 @@ def chassis_sim_checks() -> None:
     check("odometer = base + trip",
           ch3.get("odometer_mi", 0) > get_scenario("road_trip").odometer_mi + 15)
 
+    print("== OBD engine stream (coherent model) ==")
+    check("driving: rpm/load/boost in plausible bands",
+          1200 <= ch.get("rpm", 0) <= 2600 and 30 <= ch.get("engine_load_pct", 0) <= 80
+          and ch.get("boost_psi", 0) > 1.5,
+          f"{ch.get('rpm')}rpm, {ch.get('engine_load_pct')}%, {ch.get('boost_psi')}psi")
+    mpg = (ch.get("speed_mph", 0) / ch.get("fuel_rate_gph", 1)
+           if ch.get("fuel_rate_gph", 0) > 0.1 else 0)
+    check("live MPG plausible for a loaded 3500XD (10-22)",
+          10.0 <= mpg <= 22.0, f"{mpg:.1f} mpg")
+    check("parked: engine stream reads zero",
+          ch3.get("rpm") == 0.0 and ch3.get("boost_psi") == 0.0
+          and ch3.get("fuel_rate_gph") == 0.0)
+    check("range tracks the tank",
+          ch3.get("range_mi", 0) < ch.get("range_mi", 9999)
+          and 100 < ch3.get("range_mi", 0) < 400,
+          f"{ch.get('range_mi')} → {ch3.get('range_mi')} mi")
+
     print("== charging_path_fault scenario (fusion premise) ==")
     f = SimSource(get_scenario("charging_path_fault"))
     f.advance(10 * 60)

@@ -130,6 +130,9 @@ class SolarArray:
 class VanModel:
     """Steps the whole electrical system forward and exposes device readings."""
 
+    TANK_GAL = 24.5              # 2022 Sprinter 3500XD [verified-external]
+    AVG_MPG = 16.0               # range basis, conservative
+
     def __init__(self, scenario, rng: random.Random, loads: LoadBank,
                  hvac=None, gps=None):
         self.scn = scenario
@@ -160,6 +163,14 @@ class VanModel:
         self.fuel_pct = scenario.fuel_pct
         self.def_pct = scenario.def_pct
         self.coolant_c = scenario.ambient_c
+        # OBD-II-style engine stream (P9b): what the BLE dongle's standard
+        # PIDs would give us — modelled coherently: load drives boost and
+        # fuel rate; fuel rate drives the tank level.
+        self.rpm = 0.0
+        self.engine_load_pct = 0.0
+        self.boost_psi = 0.0
+        self.fuel_rate_gph = 0.0
+        self.engine_runtime_s = 0.0
         self.battery = Battery(scenario.start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
@@ -246,10 +257,26 @@ class VanModel:
 
         # Chassis thermals/consumables move only while the engine runs.
         if engine_on:
-            self.fuel_pct = max(0.0, self.fuel_pct - 7.0 * dt_s / 3600.0)
+            speed = self.gps.speed_mph if self.gps else 0.0
+            # Coherent OBD stream: speed → rpm; load from speed + "terrain"
+            # wander; load → boost and fuel rate; fuel rate → tank level.
+            self.rpm = 680.0 + speed * 34.0 + self.rng.uniform(-40, 40)
+            target_load = 22.0 + min(58.0, speed * 1.1) + self.rng.uniform(-6, 6)
+            self.engine_load_pct += (target_load - self.engine_load_pct) \
+                * min(1.0, dt_s / 20.0)
+            self.boost_psi = max(0.0, (self.engine_load_pct - 22.0) / 60.0) * 18.0
+            self.fuel_rate_gph = 0.35 + self.engine_load_pct / 100.0 * 3.0
+            self.fuel_pct = max(0.0, self.fuel_pct - self.fuel_rate_gph
+                                / self.TANK_GAL * 100.0 * dt_s / 3600.0)
             self.def_pct = max(0.0, self.def_pct - 0.15 * dt_s / 3600.0)
             self.coolant_c += (90.0 - self.coolant_c) * min(1.0, dt_s / 300.0)
+            self.engine_runtime_s += dt_s
         else:
+            self.rpm = 0.0
+            self.engine_load_pct = 0.0
+            self.boost_psi = 0.0
+            self.fuel_rate_gph = 0.0
+            self.engine_runtime_s = 0.0
             self.coolant_c += (self.ambient_c() - self.coolant_c) * min(1.0, dt_s / 1800.0)
         i_alt = max(0.0, min(50.0 - i_pv, i_alt))   # DCC50S is a 50A device
         self.alt_w = i_alt * v
@@ -488,10 +515,19 @@ class SimSource(TelemetrySource):
             add("chassis", "odometer_mi",
                 m.scn.odometer_mi + (m.gps.trip_mi if m.gps else 0.0), 0.0, 0.1)
             add("chassis", "dtc_count", m.scn.dtc_count, 0.0, 1.0)
+            add("chassis", "rpm", m.rpm, 8.0 if eng else 0.0, 10.0)
+            add("chassis", "engine_load_pct", m.engine_load_pct,
+                0.5 if eng else 0.0, 1.0)
+            add("chassis", "boost_psi", m.boost_psi, 0.1 if eng else 0.0, 0.1)
+            add("chassis", "fuel_rate_gph", m.fuel_rate_gph,
+                0.02 if eng else 0.0, 0.01)
+            add("chassis", "range_mi",
+                m.fuel_pct / 100.0 * m.TANK_GAL * m.AVG_MPG, 0.0, 1.0)
         if m.gps is not None and "gps" not in self._offline:     # GPS round
             add("gps", "lat", m.gps.lat, 0.00002, 0.00001)   # ~2m fix jitter
             add("gps", "lon", m.gps.lon, 0.00002, 0.00001)
-            add("gps", "speed_mph", m.gps.speed_mph, 0.2, 0.1)
+            add("gps", "speed_mph", m.gps.speed_mph,
+                0.2 if m.gps.speed_mph > 1 else 0.05, 0.1)
             add("gps", "heading_deg", m.gps.heading, 0.0, 1.0)
             add("gps", "trip_mi", m.gps.trip_mi, 0.0, 0.1)
         return out

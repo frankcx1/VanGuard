@@ -225,6 +225,11 @@ class ToolRunner:
             "coolant_f": _f(ch.get("coolant_c")),
             "odometer_mi": _r(ch.get("odometer_mi"), 0),
             "dtc_count": _r(ch.get("dtc_count"), 0),
+            "rpm": _r(ch.get("rpm"), 0),
+            "engine_load_pct": _r(ch.get("engine_load_pct"), 0),
+            "boost_psi": _r(ch.get("boost_psi")),
+            "fuel_rate_gph": _r(ch.get("fuel_rate_gph"), 2),
+            "range_mi": _r(ch.get("range_mi"), 0),
             "note": "read-only chassis telemetry",
         }
 

@@ -35,6 +35,10 @@ harness work and platform-specific DBC knowledge).
 | Odometer | medium | OBD PID 0xA6 (newer std) or MB UDS | [UNVERIFIED] on this platform | sim now |
 | DTC count / codes | high — departure check, honesty | OBD Mode 03 | [VERIFIED-EXTERNAL] std | sim now, live at C2 |
 | Ignition/key state | medium | inferred from RPM + voltage profile | [UNVERIFIED] as a direct signal | derive, don't claim |
+| Engine RPM | medium — engine state, sim rpm line | OBD PID 0x0C | [VERIFIED-EXTERNAL] std PID | sim now, live at C2 |
+| Engine load % | medium — drives boost/fuel model | OBD PID 0x04 | [VERIFIED-EXTERNAL] std PID | sim now |
+| Boost / MAP | low-medium — turbo diesel color | OBD PID 0x0B | [VERIFIED-EXTERNAL] std PID | sim now |
+| Fuel rate (→ live MPG, range) | high — trip economy, range | OBD PID 0x5E | [UNVERIFIED] — 0x5E support varies on diesels; else derive from MAF 0x10 | sim now; verify at C2 |
 | Engine hours | low | MB UDS | [UNVERIFIED] | defer |
 | Intake/ambient temp | low | OBD PID 0x0F/0x46 | [VERIFIED-EXTERNAL] | defer |
 | Tire pressures | medium | MB UDS (TPMS) | [UNVERIFIED] | defer |
