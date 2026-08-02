@@ -1,85 +1,75 @@
 # VanGuard — Filming Run Sheet
 
-*Keep this nearby while recording. Everything on screen is live; only the
-fault timing is scripted.*
+*Companion to `OneDrive\VanGuard\VanGuard_Scripts_ShotList.docx` (the
+scripts + shot list). Keep this nearby while recording. Everything on
+screen is live; only the event schedule is scripted — and Park resets it.*
 
 ## Launch (one command, ~2 min to ready)
 
 ```powershell
 cd C:\vibe\vangaurd
-.\scripts\demo.ps1 -Scenario driveway -NPU -Presentation -Kiosk
+.\scripts\demo.ps1 -Scenario driveway -NPU -Presentation -Kiosk -Take forgot_switch
 ```
 
+- `-Take forgot_switch` — arms the shoot's event schedule (see clock below);
+  `forgot_switch_fast` is the +12s pacing variant if the drive stretch drags
 - `-NPU` — model genuinely serves on the NPU (rail: LOCAL AI: NPU · Qwen3-4B)
-- `-Presentation` — badge reads SIMULATED VAN · REAL LOCAL AI; Starlink auto-online
+- `-Presentation` — badge reads SIMULATED VAN · REAL LOCAL AI
 - `-Kiosk` — fullscreen Edge, zero chrome (**Alt+F4** exits)
 - Stop everything: `.\scripts\demo.ps1 -Stop`
 
-## Option A — 🎬 Story mode (guided, ~3–4 min, presenter-paced)
+## The take: `forgot_switch` (Cut A 1:16–2:23 / all of Cut B's demo)
 
-Click **🎬 Story** in the rail (or open `http://127.0.0.1:8000/#story`).
-Next/◀ are pinned bottom-right and never move. 15 steps:
+Pre-drive state, however long the setup runs: battery held at its ~20.2%
+mark, Starlink online and steady (~24W), rear A/C off, solar producing.
+The story: the alternator→house charge switch was never flipped (B7 is the
+physical insert shot) — so the moment we drive, the house battery drains
+while Mercedes sees a perfectly healthy engine.
 
-| # | Spotlight | What happens / say-over |
-|---|---|---|
-| 1 | Rail | the promise: local model, NPU, data stays on device |
-| 2 | Battery | coulomb-counted battery, live runtime math |
-| 3 | Power Flow | watts reconcile; switches are live |
-| 4 | Climate+Network | comfort + Starlink that the battery feels |
-| 5 | Insight | rules verdict · model words · signed patrols |
-| 6 | Outlook | sunrise forecast, assumptions disclosed |
-| 7 | Trip/Chassis | read-only Mercedes data, fused |
-| 8 | Ask | **auto-asks** "what's charging the battery?" (NPU answers ~10s) |
-| 9 | Ask | **auto-asks** the cooktop question (calculator verdict, instant) |
-| 10 | Chassis | **starts the drive** — engine, alternator, Starlink on |
-| 11 | Alerts | *wait here ~40s*: fault at 0:30, alert appears |
-| 12 | Guardian | *wait ~30s more*: DETECTED→…→ACTED (sheds Starlink) |
-| 13 | Ask | **auto-asks** "why did you turn Starlink off?" |
-| 14 | Diagnostics | the audit: N tool calls · 0 external |
-| 15 | — | **parks + resets take** · "Monitor. Understand. Protect." |
+**Event clock, relative to the ▶ Drive press** (verified by
+`scripts\verify_take.py`; consecutive takes reproduce within ~1s):
 
-Steps 11–12 are the only ones where you *wait for reality* — narrate over it.
-
-## Option B — the 70-second cut (recommended for LinkedIn)
-
-One autonomous event, one visibly local voice exchange, one receipt.
-
-| Clock | Beat | Say-over |
-|---|---|---|
-| 0:00–0:07 | Establish the dashboard | "This Surface Pro is monitoring a simulated Sprinter — but the voice, the model, the NPU inference, and the decisions are real." |
-| 0:07–0:15 | Point at the rail | "Local Qwen on the NPU, voice stays local, no cloud model — even with Starlink connected." |
-| 0:15–0:20 | Press **▶ Drive** | "Let's go for a drive — and stage a failure." |
-| 0:20–0:45 | Fault at 0:30 → alert fires | "The charging path just failed. Mercedes sees nothing wrong — only the fused view catches it." |
-| 0:45–1:00 | **Guardian event card** takes over the strip: DETECTED → VERIFIED → POLICY MATCHED → ACTIONED → RECOVERY CONFIRMED, load reduced, forecast improved, decision receipt underneath | "The Guardian can't fix a charging path, so it does the one legitimate thing: sheds the loads it can no longer afford. Detected, verified, actioned, recovery confirmed — every stage logged." |
-| 1:00–1:15 | Tap the amber **why did you do that?** chip (it appears by itself after the action) — or ask it by voice via 🎤 | the answer is read back from the Guardian log, with the local pipeline banner over the reply |
-| 1:15–1:20 | Footer + receipt line | "Telemetry, voice, reasoning, decisions — processed on this device. Zero external calls." |
-| +10s | **The EdgeForwardAI beat** (over the rail, or b-roll of the Surface) | "And here's the part that matters for builders: none of this was experimental. Intel's silicon and OpenVINO, Microsoft's on-device dictation, open weights from the Qwen and Whisper teams — a defined, functioning path from download to NPU. The edge isn't the fallback anymore. It's the forward position." |
-
-**The offline beat (optional, +8s):** switch Network to **Off** — the rail
-flips to **NO UPLINK · LOCAL AI ACTIVE**. Ask the voice question *then*.
-Local AI isn't a fallback for bad connectivity; it just doesn't need the
-internet. (In the drive take Guardian already suspends Starlink for you —
-same message, cleaner narrative.)
-
-## Option C — the 90-second Drive take (freeform)
-
-| Clock | What the camera sees |
+| Clock | What the screen does |
 |---|---|
-| 0:00 | Press **▶ Drive** (Trip tile). Engine starts, ~500W alternator, Starlink on |
-| 0:30 | Scripted fault: house charging stops; chassis stays healthy (14.1V, DTC 0) |
-| ~0:40 | ⚠ Alert: "moving with no alternator input"; Insight names it |
-| ~0:55–1:10 | **Guardian acts**: DETECTED → VERIFIED → DECIDED ("can't repair; conserving") → ACTED: Suspend Starlink (~24W) |
-| ~1:15–1:30 | CONFIRMED: battery net power before → after; sunrise forecast before → after |
+| 0:00 | ▶ Drive: engine on, rear A/C on (~900W, for the Doodles), house charge input **0W**, chassis healthy at 14.1V |
+| ~+20s | SOC crosses **20.0%** — one warning alert, whole app chrome starts the **red pulse** |
+| ~+27s | Guardian **STAGE 1**: DETECTED → VERIFIED → ACTED: *Shed Starlink dish* (~24W); pulse eases to a slow amber breath |
+| ~+39s | Guardian **STAGE 2**: *Shed rear A/C* (~900W) — the battery-saver exception, executed autonomously below 20% |
+| ~+40s | Amber **why did you do that?** chip appears (held until the final stage, on purpose) |
+| ~+47s | RECOVERY CONFIRMED: net watts before → after, forecast improves, border calm — **one calm card**, PROTECTED: fridge · freezer visible throughout |
 
-Then (optional): hold 🎤 and ask **"Why did you turn Starlink off?"** — the
-NPU answers from the Guardian log.
+`forgot_switch_fast`: crossing ~+12s, Stage 1 ~+19s, Stage 2 ~+31s.
 
-Press **⏸ Park** = full take reset: van back home, trip zeroed, fault
-cleared, Guardian cooldowns wiped, autonomy re-armed to **Protect**.
-Repeat as many takes as you need — identical every time.
+**⏸ Park fully resets the take:** SOC back to its mark (re-pinned), A/C
+off, dish back online *and warm* (no 45s re-boot between takes), Guardian
+episodes/cooldowns wiped, autonomy re-armed to **Protect**, van home, trip
+zeroed. Shoot as many takes as needed — the timing is identical.
 
-Contrast shot: set autonomy to **Advise** before a take → Guardian
-recommends the same plan but touches nothing.
+**The voice beat (2:23–2:39):** after Stage 2, tap the chip — or tap 🎤 and
+ask *"why did you do that?"* out loud. The answer reads back from the
+Guardian log over authentic NPU time (~10s; the long cut holds the wait).
+Footer receipt: local pipeline, N tool calls, **0 external calls**.
+
+**Consistency rule (from the shot list):** Frank's mouth never outruns the
+screen; no version numbers spoken unless the rail badge shows them; the
+Presentation badge reads SIMULATED VAN · REAL LOCAL AI at all times.
+
+### What the take scripts (disclosed, for the record)
+
+Telemetry stays physically modelled (coulomb-counted battery, real OCV
+curve, real loads). The take arranges: start SOC at the tuned mark, SOC
+pinned until the Drive press (the clock starts at the press, not at app
+launch), dish pre-warmed, A/C-on as a Drive side effect, alert thresholds
+tuned so the crossing is the single warning, and a narrowed Guardian
+detector set so nothing talks over the battery-saver story. BUILD_LOG has
+the details.
+
+## Story mode (guided, presenter-paced) — Option A
+
+Click **🎬 Story** in the rail (or `http://127.0.0.1:8000/#story`). 15
+steps; with the take armed, steps 10–12 play the forgot-switch beats
+(press Drive → wait ~20s for the crossing → watch the two-stage shed).
+Narrate over the waits; the app's clock is deterministic, yours needn't be.
 
 ## Dictation (tablet-first, no keyboard needed)
 
@@ -97,12 +87,12 @@ API — it ships audio to a cloud service.
 ## Good voice/typed questions (all answered on-device)
 
 The four chips on screen: cooktop 25 min? · power until sunrise? ·
-anything abnormal? · ready to depart?  After any Guardian action an amber
-**why did you do that?** chip appears on its own for ~15 minutes.
+anything abnormal? · ready to depart?  After the Guardian's final stage an
+amber **why did you do that?** chip appears on its own for ~15 minutes.
 
 Also good spoken: "What is charging the battery right now?" *(NPU, real
-numbers)* · "What should we do nearby?" *(offline POIs)* · "Why did you
-turn Starlink off?"
+numbers)* · "Why did you turn Starlink off?" · "What should we do nearby?"
+*(offline POIs)*
 
 Voice questions get the full pipeline on screen: **● LISTENING LOCALLY**
 while dictating, `VOICE → WINDOWS ON-DEVICE DICTATION → QWEN3-4B ON NPU →
@@ -117,6 +107,11 @@ device · N local tool calls · 0 external calls"* receipt under the answer.
 
 ## If something looks off
 
+- Red pulse not animating → Windows "animation effects" is off
+  (Settings → Accessibility → Visual effects) — the CSS honors
+  reduced-motion
+- Battery tile not moving after Drive → check the take actually armed:
+  the launcher's READY line should say `take=forgot_switch`
 - Patrol text ≠ live tiles → hit **Check now** (patrol is up to 5 min old)
 - ⚠ STALE chip → poller died: `demo.ps1 -Stop` then relaunch
 - Model feels slow → NPU is ~727ms to first token (authentic); drop `-NPU`

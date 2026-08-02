@@ -52,6 +52,44 @@ class Scenario:
                                    # house system — the fusion-finding demo
 
 
+@dataclass(frozen=True)
+class Take:
+    """A filmed-take overlay on a scenario (VanGuard_Scripts_ShotList.docx).
+
+    A take scripts the *event schedule* of an interactive demo drive — the
+    telemetry stays physically modelled, but the initial conditions and the
+    Drive-press side effects are arranged so the story beats land on cue,
+    identically every take. Park restores all of it.
+    """
+    name: str
+    start_soc: float               # overrides the scenario; tuned so the
+                                   # 20% crossing lands on the shot-list clock
+    forgot_charge_switch: bool = True   # the story shot: engine charges the
+                                        # chassis, house input is 0W
+    rear_ac_on_drive: bool = True       # Doodles in the back
+    hold_soc_parked: bool = True        # SOC pinned until the Drive press so
+                                        # the crossing clock starts at the
+                                        # press, not at app launch
+
+
+# start_soc values are tuned by scripts/verify_take.py so the first emitted
+# SOC <= 20.0% lands at the shot-list offset from the Drive press
+# (forgot_switch: +20s; forgot_switch_fast: +12s), at ~820W net drain.
+TAKES: dict[str, Take] = {
+    "forgot_switch": Take("forgot_switch", start_soc=20.158),
+    "forgot_switch_fast": Take("forgot_switch_fast", start_soc=20.114),
+}
+
+
+def get_take(name: str | None):
+    if not name:
+        return None
+    try:
+        return TAKES[name]
+    except KeyError:
+        raise KeyError(f"unknown take '{name}'; choose from {sorted(TAKES)}") from None
+
+
 PRESETS: dict[str, Scenario] = {
     # Dashboard hero shot: healthy battery, strong sun, light loads.
     "sunny_midday": Scenario(
@@ -150,7 +188,8 @@ def get_scenario(name: str) -> Scenario:
         ) from None
 
 
-def build_model(scn: Scenario) -> tuple[VanModel, random.Random]:
+def build_model(scn: Scenario, take: Take | None = None
+                ) -> tuple[VanModel, random.Random]:
     """Construct the deterministic model + RNG pair for a scenario.
 
     One RNG drives everything (loads, weather, sensor noise) so a preset's
@@ -170,9 +209,14 @@ def build_model(scn: Scenario) -> tuple[VanModel, random.Random]:
                 setpoint_c=scn.hvac_setpoint_c)
     gps = GpsTrack(scn.seed, position=scn.position, route=scn.route,
                    speed_mph=scn.drive_mph)
-    model = VanModel(scn, rng, loads, hvac=hvac, gps=gps)
+    model = VanModel(scn, rng, loads, hvac=hvac, gps=gps, take=take)
     if scn.inverter_on:
         model.inverter_on = True
     if scn.network_mode != "off":
         model.network.set_mode(scn.network_mode)
+    if take is not None:
+        # A take opens with the dish already online and steady (~24W) so
+        # Guardian's Stage 1 shed reads the shot-list number, not boot draw.
+        model.network.set_mode("starlink")
+        model.network.force_online()
     return model, rng

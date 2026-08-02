@@ -1,7 +1,9 @@
 /* VanGuard dashboard. Vanilla JS, zero dependencies, fully offline. */
 "use strict";
 
-const REFRESH_LATEST_MS = 5_000;
+// 2s: the local API is on-loopback and cheap; the filmed 20% crossing (and
+// the alert that lands with it) can't lag the battery by 5 seconds.
+const REFRESH_LATEST_MS = 2_000;
 const REFRESH_INSIGHT_MS = 10_000;
 const REFRESH_HISTORY_MS = 60_000;
 const HISTORY_WINDOW_S = 24 * 3600;
@@ -89,7 +91,8 @@ async function refreshLatest() {
     : `source: ${data.source_kind}` + (data.simulated ? " · SIMULATED DATA — no van hardware connected" : " · live van data");
 
   const soc = get(rd, "shunt", "soc_pct");
-  $("soc").textContent = soc == null ? "–" : soc.toFixed(0);
+  // One decimal near the wire: the filmed 20% crossing must read on screen.
+  $("soc").textContent = soc == null ? "–" : soc.toFixed(soc < 30 ? 1 : 0);
   setSocStatus(soc);
   const v = get(rd, "shunt", "voltage_v");
   $("volts").textContent = v == null ? "–" : `${v.toFixed(2)} V`;
@@ -630,6 +633,11 @@ async function refreshGuardian() {
   document.querySelector(".guardian").classList.toggle("event", hasCard);
   body.classList.toggle("hidden", hasCard);
 
+  // The whole screen's demeanor (battery-saver take): red pulse under 20%
+  // until Guardian acts, easing amber while the stages unwind, calm after.
+  document.body.classList.toggle("screen-alarm", g.screen === "alarm");
+  document.body.classList.toggle("screen-easing", g.screen === "easing");
+
   const ev = (g.events ?? [])[0];
   if (active && ev) {
     body.innerHTML = `<b>${escapeHtml(ev.title)}</b> — ${escapeHtml(ev.detail)}`;
@@ -646,8 +654,11 @@ async function refreshGuardian() {
 
   // "Why did you do that?" becomes a first-class prompt right after Guardian
   // acts — the question a viewer (and an owner) actually has in that moment.
+  // While a staged story is still escalating, hold the chip: it should land
+  // after the final shed, not mid-ladder.
   const acted = (g.events ?? []).find(e => ["acted", "confirmed"].includes(e.stage));
-  ensureWhyChip(!!acted && (Date.now() / 1000 - acted.ts) < 900);
+  ensureWhyChip(!!acted && (Date.now() / 1000 - acted.ts) < 900
+                && !(g.card && g.card.escalating));
 
   $("g-policy-summary").textContent =
     `${g.level}: ${G_LEVELS[g.level] ?? ""} · policy details`;
@@ -685,10 +696,16 @@ function renderGuardianCard(card) {
       `</div>`;
   }
   const rc = card.receipt ?? {};
+  const stageChip = card.stage_no
+    ? `<span class="gc-stage">STAGE ${card.stage_no}</span>` : "";
+  const protectedRow = card.protected?.length
+    ? `<div class="gc-protected">PROTECTED: <b>${escapeHtml(card.protected.join(" · "))}</b>` +
+      ` — never shed · wakes you before the food goes warm</div>` : "";
   el.innerHTML =
-    `<div class="gc-title">${escapeHtml(card.title.toUpperCase())}</div>` +
+    `<div class="gc-title">${stageChip}${escapeHtml(card.title.toUpperCase())}</div>` +
     (risk ? `<div class="gc-grid">${risk}</div>` : "") +
     `<div class="gc-action"><span>${verb}</span> ${acts}</div>` +
+    protectedRow +
     result +
     `<div class="gc-receipt" title="decision receipt — everything above is read back from the audit log">` +
     [rc.evidence, rc.policy, rc.ai, rc.external]
@@ -1202,12 +1219,12 @@ const STORY = [
   { caption: "\"Can I cook dinner?\" Battery math is never the AI's job — a calculation service renders the verdict; the model just speaks it. That's why it's never wrong.",
     target: ".chat-tile",
     action: () => sendChat("Can I run the cooktop for 25 minutes?") },
-  { caption: "Now let's go for a drive. Engine on, alternator charging, Starlink along for the ride. Watch the chassis readout come alive.",
+  { caption: "Now let's go for a drive — except I've forgotten the switch that charges the house battery off the alternator. Mercedes sees a healthy engine; the house side gets nothing. And the rear A/C is running for the dogs.",
     target: ".tile:has(#chassis-block)",
     action: () => postJson("/api/drive", { on: true }).then(() => { refreshTrip(); refreshAudit(); }) },
-  { caption: "Thirty seconds in, we stage a failure: the charging path breaks. The engine is fine — Mercedes sees nothing wrong. Only the fused view catches it. Watch the alerts.",
-    target: ".tile:has(#alert-list)" },
-  { caption: "The Guardian — a deterministic policy engine, not the model — detects it, verifies it, and does the one legitimate thing: it can't fix the fault, so it sheds the load it can no longer afford. Every stage logged.",
+  { caption: "Twenty seconds in, the battery crosses twenty percent. One alert — and the whole screen turns red. There's no battery-saving mode on a van. Well. There is now.",
+    target: ".hero" },
+  { caption: "The Guardian — a deterministic policy engine, not the model — sheds my loads in my order: Starlink first, then the rear A/C. The fridge and freezer? Protected. Never touched. It would wake me before the food went warm.",
     target: ".guardian" },
   { caption: "And you can ask why. The answer comes from the logged evidence — never from imagination.",
     target: ".chat-tile",
@@ -1287,7 +1304,9 @@ refreshRuntime();
 refreshWatchdog();
 refreshGuardian();
 setInterval(refreshWatchdog, 30_000);
-setInterval(refreshGuardian, 10_000);
+// 2s: guardian stage transitions are the on-camera choreography — a 10s
+// UI cadence would visibly lag the +28s/+40s shot-list beats.
+setInterval(refreshGuardian, 2_000);
 setInterval(tick, REFRESH_LATEST_MS);
 setInterval(refreshInsight, REFRESH_INSIGHT_MS);
 setInterval(refreshSparks, REFRESH_HISTORY_MS);

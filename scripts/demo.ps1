@@ -9,10 +9,19 @@
 # so the first on-camera question doesn't sit through a compile, then opens
 # the dashboard. Scenario presets are seeded — a re-shoot gets the same
 # numbers (PLAN.md §7).
+#
+# The shoot (VanGuard_Scripts_ShotList.docx) launches with a take profile:
+#   .\scripts\demo.ps1 -Scenario driveway -NPU -Presentation -Kiosk -Take forgot_switch
+# A take scripts the demo drive's event schedule against the Drive press:
+# 20% crossing +20s (fast variant +12s), Guardian Stage 1 (Starlink) +28s,
+# Stage 2 (rear A/C) +40s, why-chip after the final stage. Park resets the
+# take completely; consecutive takes reproduce within ~1s.
 
 param(
     [ValidateSet("sunny_midday", "dusk_low", "overnight_drain", "shore_power", "cloudy_marginal", "road_trip", "driveway", "overnight_guardian", "charging_path_fault", "arrival_cleanup")]
     [string]$Scenario = "sunny_midday",
+    [ValidateSet("", "forgot_switch", "forgot_switch_fast")]
+    [string]$Take = "",          # filmed-take event schedule (see above)
     [double]$SeedHours = 0,      # 0 = auto per scenario
     [int]$Port = 8000,
     [switch]$Stop,
@@ -40,6 +49,11 @@ if ($Stop) {
     exit 0
 }
 
+if ($SeedHours -le 0 -and $Take) {
+    # A take pins SOC at its mark until the Drive press; a short seed keeps
+    # the flat battery line honest-looking (the story starts at the press).
+    $SeedHours = 2
+}
 if ($SeedHours -le 0) {
     # Enough history for a full sparkline without contradicting the preset's
     # story: a full day for daytime scenes, the evening so far for dusk ones.
@@ -67,32 +81,63 @@ foreach ($suffix in "", "-wal", "-shm") {
     }
 }
 
-Write-Host "== seeding $SeedHours h of $Scenario =="
-& $py (Join-Path $repo "scripts\seed_db.py") $db $Scenario $SeedHours
+Write-Host "== seeding $SeedHours h of $Scenario$(if ($Take) { ", take $Take" }) =="
+$seedArgs = @((Join-Path $repo "scripts\seed_db.py"), $db, $Scenario, $SeedHours)
+if ($Take) { $seedArgs += $Take }
+& $py @seedArgs
 if ($LASTEXITCODE -ne 0) { Write-Error "seeding failed"; exit 1 }
 
 $cfg = Join-Path $demoDir "devices_$Scenario.yaml"
 $dbYaml = ($db -replace '\\', '/')
 $order = if ($NPU) { "[NPU, GPU, CPU]" } else { "[GPU, NPU, CPU]" }
 $pres = if ($Presentation) { "true" } else { "false" }
+if ($Take) {
+    # Take mode: 1s poll + 1s guardian so the shot-list clock lands within
+    # ~1s across takes; the detector set narrowed so nothing talks over the
+    # battery-saver story; alerts tuned so the 20% crossing is THE alert.
+    $takeLines = @"
+  take: $Take
+"@
+    $pollInterval = 1
+    $guardianBlock = @"
+guardian:
+  interval_s: 1
+  default_level: protect
+  # No arrival detector during a take: Park is the reset button between
+  # takes, and arrival-cleanup would re-shed the dish the reset restores.
+  detectors: [sag, battery_saver]
+alerts:
+  soc_warn_pct: 20.0
+  tte_warn_h: 0.5
+  alt_missing_severity: advisory
+  reserve_warning: false
+"@
+} else {
+    $takeLines = ""
+    $pollInterval = 2
+    $guardianBlock = @"
+guardian:
+  interval_s: 15
+  default_level: protect
+"@
+}
 @"
 source: sim
-poll_interval_s: 2
+poll_interval_s: $pollInterval
 db_path: $dbYaml
 presentation: $pres
 sim:
   scenario: $Scenario
   speed: 1.0
   warmup_h: $SeedHours
+$takeLines
 inference:
   model_dir: ov_qwen3_4b_instruct_2507_int4_npu
   device_order: $order
 watchdog:
   interval_min: 5
   use_model: true
-guardian:
-  interval_s: 15       # snappy demo cadence: Drive-take fault at 30s →
-  default_level: protect   # Guardian acts ~60s, confirmed ~80s
+$guardianBlock
 "@ | Out-File -Encoding utf8 $cfg
 
 Write-Host "== starting poller + api (port $Port) =="
@@ -122,8 +167,9 @@ try {
     Write-Warning "pre-warm failed (model not exported?): $_"
 }
 
-if ($Presentation) {
+if ($Presentation -and -not $Take) {
     # Filming default: bring the Starlink uplink online for the shot.
+    # (A take arms the dish itself, already warm — no command needed.)
     try {
         Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/network" -Method Post `
             -ContentType "application/json" -Body '{"mode":"starlink"}' | Out-Null
@@ -132,7 +178,7 @@ if ($Presentation) {
 }
 
 Write-Host ""
-Write-Host "READY  →  http://127.0.0.1:$Port   scenario=$Scenario (SIM badge on, as it must be)"
+Write-Host "READY  →  http://127.0.0.1:$Port   scenario=$Scenario$(if ($Take) { "  take=$Take (event clock armed at the Drive press)" }) (SIM badge on, as it must be)"
 Write-Host "Stop with:  .\scripts\demo.ps1 -Stop"
 if ($Kiosk) {
     $edge = @("C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",

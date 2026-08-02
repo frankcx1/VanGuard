@@ -50,6 +50,12 @@ class NetworkSim:
         self.mode = new
         return True
 
+    def force_online(self) -> None:
+        """Skip the boot phase — take stage-mark only. A filmed take needs
+        the dish at its ~24W steady state, including immediately after a
+        Park reset (a real dish would spend 45s booting between takes)."""
+        self._boot_left_s = 0.0
+
     def step(self, dt_s: float) -> None:
         r = self._rng
         self._obstruction = min(0.25, max(0.0,

@@ -28,12 +28,14 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""))
 
 
-async def seed(db_path: Path, scenario: str, hours: float, cadence_s: int = 30) -> None:
+async def seed(db_path: Path, scenario: str, hours: float, cadence_s: int = 30,
+               take: str | None = None) -> None:
     for suffix in ("", "-wal", "-shm"):
         p = Path(str(db_path) + suffix)
         if p.exists():
             p.unlink()
-    src = SimSource(get_scenario(scenario))
+    from sim.scenarios import get_take
+    src = SimSource(get_scenario(scenario), take=get_take(take))
     store = await Store(db_path).open()
     now = int(time.time())
     steps = int(hours * 3600 / cadence_s)

@@ -85,6 +85,14 @@ class Battery:
         else:
             self.discharge_ah_total += -d_ah
 
+    def pin_for_take(self, soc_pct: float) -> None:
+        """Take stage-mark ONLY (sim/scenarios.Take): holds SOC at its mark
+        while the van is parked pre-take so the shot clock starts at the
+        Drive press. The one sanctioned exception to 'SOC is never assigned
+        after __init__' — same class of mechanic as the Park reset, and it
+        never runs outside an armed take."""
+        self._soc = max(0.0, min(100.0, soc_pct))
+
     def terminal_v(self, charge_stage: str) -> float:
         if charge_stage == "absorption":
             return BULK_ABSORB_V
@@ -132,12 +140,12 @@ class VanModel:
 
     TANK_GAL = 24.5              # 2022 Sprinter 3500XD [verified-external]
     AVG_MPG = 16.0               # range basis, conservative
-    DRIVE_FAULT_AFTER_S = 30.0   # scripted fault timing for demo drives
 
     def __init__(self, scenario, rng: random.Random, loads: LoadBank,
-                 hvac=None, gps=None):
+                 hvac=None, gps=None, take=None):
         self.scn = scenario
         self.rng = rng
+        self.take = take
         self.loads = loads
         self.hvac = hvac
         self.gps = gps
@@ -172,12 +180,18 @@ class VanModel:
         self.boost_psi = 0.0
         self.fuel_rate_gph = 0.0
         self.engine_runtime_s = 0.0
-        # Interactive demo drive (Drive button): a scripted charging-path
-        # fault fires partway into every take, so the alert → insight →
-        # Guardian cascade happens on cue. Park clears it and resets.
-        self._drive_started_s: float | None = None
-        self._drive_fault = False
-        self.battery = Battery(scenario.start_soc)
+        # Interactive demo drive (Drive button). With a take armed
+        # (VanGuard_Scripts_ShotList.docx), the Drive press plays the
+        # forgot-the-charge-switch story: the physical alternator→house
+        # switch was never flipped, so the engine charges the chassis while
+        # the house battery gets nothing. Park resets the take completely.
+        self._driving = False
+        # The physical charge switch by the seat. True = flipped (normal),
+        # False = forgotten (the story shot). Chassis stays healthy either
+        # way — that's the point.
+        self.charge_switch_on = not (take and take.forgot_charge_switch)
+        start_soc = take.start_soc if take else scenario.start_soc
+        self.battery = Battery(start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
         self.sim_s = 0.0                       # seconds since scenario start
         self.charge_stage = "bulk"             # 'bulk' | 'absorption' | 'float'
@@ -187,7 +201,7 @@ class VanModel:
         # Last-step observables, read by the emitter.
         self.pv_w = 0.0
         self.load_w = 0.0
-        self.batt_v = ocv(scenario.start_soc)
+        self.batt_v = ocv(start_soc)
 
     @property
     def clock_h(self) -> float:
@@ -252,14 +266,11 @@ class VanModel:
         else:                   # human override: engine idling / shut off
             engine_on = alt_sw
         self.engine_running = engine_on
-        if (self._drive_started_s is not None and self.gps is not None
-                and self.gps.free_drive and not self._drive_fault
-                and self.sim_s - self._drive_started_s >= self.DRIVE_FAULT_AFTER_S):
-            self._drive_fault = True    # the scripted mid-drive fault
-        if self.scn.charging_fault or self._drive_fault:
+        if self.scn.charging_fault or not self.charge_switch_on:
             # The Mercedes side is healthy; the DC-DC path to the house
-            # battery is not. Neither subsystem alone can explain this —
-            # that's the point of the fusion finding.
+            # battery is not (fault preset), or the charge switch by the
+            # seat was never flipped (take story). Neither subsystem alone
+            # can explain it — that's the point of the fusion finding.
             i_alt = 0.0
         else:
             i_alt = (self.scn.alternator_a or 40.0) if engine_on else 0.0
@@ -296,6 +307,11 @@ class VanModel:
         i_charge = self._charge_stage_limit(i_charge_avail, dt_s)
         i_net = i_charge - i_load
         self.battery.step(i_net, dt_s)
+        if self.take and self.take.hold_soc_parked and not self._driving:
+            # Take stage-mark: the shot-list clock is relative to the Drive
+            # press, so SOC holds at its mark until then — however long the
+            # on-camera setup runs. Coulomb counting takes over at the press.
+            self.battery.pin_for_take(self.take.start_soc)
         self.batt_v = self.battery.terminal_v(self.charge_stage)
 
         if i_pv > 0 and i_charge > 0:
@@ -345,16 +361,30 @@ class VanModel:
                 return False
             if cmd.get("on"):
                 self.gps.start_drive(float(cmd.get("speed_mph", 30.0)))
-                self._drive_started_s = self.sim_s
-                self._drive_fault = False
+                self._driving = True
                 if self.network.mode == 0.0:
                     # Travel connectivity comes on with the drive — and it
-                    # gives Guardian something real to shed after the fault.
+                    # gives Guardian something real to shed by priority.
                     self.network.set_mode("starlink")
+                if self.take and self.take.rear_ac_on_drive and self.hvac:
+                    # The take's other scripted side effect: rear A/C on for
+                    # the Doodles, a real ~900W battery load from here on.
+                    self.hvac.command(mode=2.0)
             else:
                 self.gps.park_and_reset()
-                self._drive_started_s = None
-                self._drive_fault = False
+                self._driving = False
+                if self.take:
+                    # Park fully resets the take: SOC back to its mark (and
+                    # re-pinned), A/C off, dish back online and warm (no
+                    # 45s re-boot between takes), switch still forgotten.
+                    self.battery = Battery(self.take.start_soc)
+                    self.charge_stage = "bulk"
+                    self._absorb_i = None
+                    if self.hvac:
+                        self.hvac.command(mode=0.0)
+                    self.network.set_mode("starlink")
+                    self.network.force_online()
+                    self.charge_switch_on = not self.take.forgot_charge_switch
             return True
         if cmd.get("target") == "load_switch":
             name = cmd.get("name")
@@ -419,12 +449,12 @@ class SimSource(TelemetrySource):
     MODEL_DT_S = 5.0     # internal integration step; polls advance N of these
 
     def __init__(self, scenario, speed: float = 1.0, warmup_h: float = 0.0,
-                 ts_fn=time.time):
+                 ts_fn=time.time, take=None):
         from sim.scenarios import build_model   # local import avoids a cycle
         self.scn = scenario
         self.speed = speed
         self._ts_fn = ts_fn
-        self.model, self._rng = build_model(scenario)
+        self.model, self._rng = build_model(scenario, take=take)
         self._last_wall = None
         self._offline: set[str] = set()   # sensors knocked out via command
         if warmup_h > 0:
@@ -462,7 +492,9 @@ class SimSource(TelemetrySource):
             add("shunt", "voltage_v", v, 0.004, 0.01)
             add("shunt", "current_a", i, 0.05, 0.01)
             add("shunt", "power_w", v * i, 0.8, 1.0)
-            add("shunt", "soc_pct", m.battery.soc, 0.0, 1.0)
+            # 0.1% steps: the take's 20%-crossing must be visible on camera
+            # (a 1% quantiser would sit on "20" for minutes either side).
+            add("shunt", "soc_pct", m.battery.soc, 0.0, 0.1)
             add("shunt", "temp_c", m.ambient_c() + 2.0 + abs(i) / 200.0 * 6.0, 0.2, 1.0)
             add("shunt", "charge_ah_total", m.battery.charge_ah_total, 0.0, 0.1)
             add("shunt", "discharge_ah_total", m.battery.discharge_ah_total, 0.0, 0.1)

@@ -29,13 +29,14 @@ def build_source(cfg: dict):
     """Factory for the configured TelemetrySource."""
     kind = cfg["source"]
     if kind == "sim":
-        from sim.scenarios import get_scenario
+        from sim.scenarios import get_scenario, get_take
         from sim.van_model import SimSource
         sim_cfg = cfg.get("sim", {})
         return SimSource(
             get_scenario(sim_cfg.get("scenario", "sunny_midday")),
             speed=float(sim_cfg.get("speed", 1.0)),
             warmup_h=float(sim_cfg.get("warmup_h", 0.0)),
+            take=get_take(sim_cfg.get("take")),
         )
     if kind == "replay":
         from sim.replay import ReplaySource

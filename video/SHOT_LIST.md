@@ -1,5 +1,12 @@
 # VanGuard shot list
 
+> **SUPERSEDED (2026-08-01):** the production scripts and shot list for the
+> shoot live in `OneDrive\VanGuard\VanGuard_Scripts_ShotList.docx` (Cut A
+> ~2:57 YouTube master, Cut B ~72s LinkedIn short, B1–B20 + pickups +
+> graphics). The app-side run sheet for that document is **FILMING.md** —
+> launch with `-Take forgot_switch`. This file remains for the earlier
+> beat-by-beat material below.
+
 Beats from the brief, split by what they need (PLAN.md §8.1). **Shootable
 tomorrow: 3, 4, and the benchmark overlay — Pro only, nothing staged.**
 

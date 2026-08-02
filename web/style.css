@@ -474,6 +474,37 @@ td.dev:hover { color: var(--ink); text-decoration: underline dotted; }
   font-size: 11px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.gc-stage {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  letter-spacing: 1.5px; color: var(--page); background: var(--st-warn);
+  border-radius: 3px; padding: 1px 6px; margin-right: 8px;
+  vertical-align: 2px;
+}
+.gc-protected { font-size: 12.5px; color: var(--st-good);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-protected b { letter-spacing: 0.5px; }
+
+/* ---- screen demeanor (the filmed battery-saver take) -----------------------
+   Under 20% with nothing done yet the whole app chrome pulses red; once
+   Guardian starts shedding it eases to a slow amber breath; recovery
+   confirmed = no border at all. Overlay only — never blocks a tap. */
+body.screen-alarm::after, body.screen-easing::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+}
+body.screen-alarm::after {
+  animation: screen-alarm 1.1s ease-in-out infinite;
+}
+body.screen-easing::after {
+  animation: screen-easing 2.6s ease-in-out infinite;
+}
+@keyframes screen-alarm {
+  0%, 100% { box-shadow: inset 0 0 0 3px rgba(208, 59, 59, 0.35); }
+  50%      { box-shadow: inset 0 0 34px 6px rgba(208, 59, 59, 0.85); }
+}
+@keyframes screen-easing {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(250, 178, 25, 0.16); }
+  50%      { box-shadow: inset 0 0 22px 3px rgba(250, 178, 25, 0.40); }
+}
 
 /* Voice pipeline visibility */
 #chat-meta.listening { color: var(--st-good); font-weight: 700; }

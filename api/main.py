@@ -83,6 +83,13 @@ DEFAULT_ALERT_RULES = {
     "tte_warn_h": 4.0,
     "volt_warn": 12.2,
     "volt_crit": 11.8,
+    # A filmed take downgrades this to "advisory" so the 20%-crossing is the
+    # take's single warning (the gap is still shown — just not as an alarm).
+    "alt_missing_severity": "warning",
+    # A take also disables the sunrise-reserve warning: the whole take lives
+    # a hair above/below the 20% reserve, and the battery-saver Guardian owns
+    # that story on screen — one calm card, not two alarms saying the same.
+    "reserve_warning": True,
 }
 
 # Operating modes are policy data, not visual labels (review adoption).
@@ -134,10 +141,12 @@ def evaluate_alerts(readings: dict, overrides: dict, stale: bool,
     if stale:
         alert("stale", "warning", "telemetry is stale - check the poller")
     if soc is not None:
+        # One decimal near the wire — the 20% crossing must read on camera.
+        soc_txt = f"{soc:.1f}%" if soc < 25.0 else f"{soc:.0f}%"
         if soc <= rules["soc_crit_pct"]:
-            alert("soc", "critical", f"battery critical: {soc:.0f}%")
+            alert("soc", "critical", f"battery critical: {soc_txt}")
         elif soc <= rules["soc_warn_pct"]:
-            alert("soc", "warning", f"battery low: {soc:.0f}%")
+            alert("soc", "warning", f"battery low: {soc_txt}")
     tte = dv.get("time_to_empty_h")
     if tte is not None and tte <= rules["tte_warn_h"]:
         alert("tte", "warning", f"~{tte:.1f}h to empty at current draw")
@@ -153,12 +162,12 @@ def evaluate_alerts(readings: dict, overrides: dict, stale: bool,
               "battery reports 100% while still accepting charge "
               "(absorption/float or SOC rounding)")
     if (speed or 0) > 5 and (alt or 0) < 25:
-        alert("alt-missing", "warning",
+        alert("alt-missing", rules["alt_missing_severity"],
               "moving with no alternator input - check DC-DC charging")
     if i is not None and net is not None and i * net < -1.0:
         alert("sensor-conflict", "data-quality",
               "battery current and power disagree on direction")
-    if outlook and outlook.get("available") \
+    if rules["reserve_warning"] and outlook and outlook.get("available") \
             and not outlook.get("reserve_ok_overnight", True):
         alert("reserve-forecast", "warning",
               f"forecast {outlook['soc_at_sunrise_pct']:.0f}% by sunrise - "

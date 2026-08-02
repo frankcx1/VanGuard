@@ -61,7 +61,10 @@ ACTIONS = {
     },
     "hvac_off": {
         "label": "Turn climate control off",
-        "permission": "confirm",           # comfort changes always ask
+        "permission": "confirm",           # comfort changes always ask —
+        # EXCEPT under the battery-saver policy (house battery ≤ 20% and
+        # draining), where the risk carries an auto_override for this
+        # action: comfort loses to the battery, by declared policy.
         "command": {"target": "hvac", "mode": "off"},
         "cooldown_s": 600,
     },
@@ -81,9 +84,15 @@ def _get(readings, source, metric):
         return None
 
 
+# Loads the Guardian will never shed, at any autonomy level: they are not
+# in the action registry at all, and the card says so out loud. It would
+# wake a human before it ever let the food go warm.
+PROTECTED_LOADS = ("fridge", "freezer")
+
 # Detection metrics worth putting on camera, in display order. Only keys
 # actually present in the episode's metrics are rendered.
 _CARD_METRICS = (
+    ("soc_pct", "battery", "{:.1f}%"),
     ("soc_at_sunrise_pct", "projected SOC at sunrise", "{:.0f}%"),
     ("reserve_pct", "policy reserve", "{:.0f}%"),
     ("voltage_v", "battery voltage", "{:.2f} V"),
@@ -104,6 +113,7 @@ class Guardian:
         self.last_action_ts = {}  # action_id → ts (cooldowns)
         self.last_withheld_ts = 0.0
         self._was_moving = False  # arrival-transition tracking (P9)
+        self._saver_stage = 0     # battery-saver stages completed this take
 
     # -- helpers ----------------------------------------------------------------
 
@@ -148,6 +158,58 @@ class Guardian:
         self.last_action_ts[action_id] = time.time()
 
     # -- risk detectors (deterministic; each returns a risk dict or None) --------
+
+    def _saver_ladder(self, readings) -> list[str]:
+        """Nonessential loads still sheddable, in the owner's priority
+        order: Starlink first, comfort second. Fridge and freezer are not
+        candidates by construction (PROTECTED_LOADS)."""
+        ladder = []
+        if _get(readings, "network", "mode") == 3.0:
+            ladder.append("suspend_starlink")
+        if (_get(readings, "hvac", "mode") or 0) != 0.0:
+            ladder.append("hvac_off")
+        return ladder
+
+    def detect_battery_saver(self, readings) -> dict | None:
+        """The battery-saver policy (P11, the filmed take's centerpiece):
+        house battery at or below 20% with a net drain — shed nonessential
+        loads ONE stage at a time, re-verifying between stages. This risk
+        stays active while SOC is under 20% so the card persists as one
+        calm summary instead of alarm spam."""
+        soc = _get(readings, "shunt", "soc_pct")
+        if soc is None or soc > 20.0:
+            return None
+        net = derived.net_power_w(readings)
+        draining = net is not None and net < -50.0
+        in_episode = bool(self.active
+                          and self.active.get("risk_id") == "battery-saver")
+        if not draining and not in_episode:
+            return None
+        stage_no = self._saver_stage + 1
+        ladder = self._saver_ladder(readings)
+        alt = _get(readings, "dcc50s", "alt_power_w") or 0.0
+        pv = _get(readings, "dcc50s", "pv_power_w") or 0.0
+        charging_txt = ("nothing meaningful charging"
+                        if alt < 25 and pv < 60 else "charge input insufficient")
+        return {
+            "id": "battery-saver",
+            "severity": "warning",
+            "title": "Battery saver — house battery below 20%",
+            "detail": (f"battery at {soc:.1f}% and falling, {charging_txt}; "
+                       + (f"stage {stage_no}: shedding the next nonessential "
+                          "load by priority" if ladder else
+                          "no nonessential loads left to shed")
+                       + f"; {' and '.join(PROTECTED_LOADS)} protected — "
+                         "never shed, wakes a human before food goes warm"),
+            "actions": ladder[:1],          # one stage at a time
+            "proposals": [],
+            "auto_override": ("hvac_off",),  # the battery-saver exception
+            "labels": {"suspend_starlink": "Shed Starlink dish",
+                       "hvac_off": "Shed rear A/C"},
+            "stage_no": stage_no,
+            "protected": list(PROTECTED_LOADS),
+            "metrics": {"soc_pct": soc, "net_w": net},
+        }
 
     def detect_reserve_risk(self, readings, outlook) -> dict | None:
         if not outlook.get("available") or outlook.get("reserve_ok_overnight", True):
@@ -315,12 +377,25 @@ class Guardian:
 
         # Sensor confidence gates everything.
         low = self.data_confidence_low(readings, now)
-        risks = [r for r in (
-            self.detect_voltage_sag(readings),
-            self.detect_reserve_risk(readings, outlook),
-            self.detect_alternator_gap(readings),
-            self.detect_arrival(readings),
-        ) if r]
+        detectors = {
+            "sag": lambda: self.detect_voltage_sag(readings),
+            "battery_saver": lambda: self.detect_battery_saver(readings),
+            "reserve": lambda: self.detect_reserve_risk(readings, outlook),
+            "alternator_gap": lambda: self.detect_alternator_gap(readings),
+            "arrival": lambda: self.detect_arrival(readings),
+        }
+        # A take's config can narrow the detector set so competing findings
+        # don't talk over the story (guardian.detectors in devices.yaml).
+        enabled = (cfg.get("guardian") or {}).get("detectors") or list(detectors)
+        risks = [r for name in enabled
+                 if name in detectors and (r := detectors[name]())]
+        # Battery-saver outranks everything below "critical" and runs alone:
+        # one calm card, not three overlapping episodes. (A genuine
+        # electrical interlock still gets through.)
+        saver = next((r for r in risks if r["id"] == "battery-saver"), None)
+        if saver:
+            risks = [saver] + [r for r in risks
+                               if r["severity"] == "critical" and r is not saver]
 
         if low and risks:
             if now - self.last_withheld_ts > 300:
@@ -330,6 +405,7 @@ class Guardian:
                                  "state until readings recover")
             return await self.status()
 
+        interval = float((cfg.get("guardian") or {}).get("interval_s", 15))
         for risk in risks:
             rid = risk["id"]
             self.pending[rid] = self.pending.get(rid, 0) + 1
@@ -337,11 +413,26 @@ class Guardian:
                             for a in risk["actions"])
             # Hysteresis, except interlocks and one-shot transitions (an
             # arrival event doesn't repeat, so it can't wait a second look).
-            needed = 1 if (interlock or rid == "arrival") else 2
+            # Battery-saver paces in wall time, not cycles, so Stage 1 lands
+            # ~8s after the 20% crossing at any evaluation interval — the
+            # shot-list clock (+20s crossing → +28s Stage 1).
+            needed = 1 if (interlock or rid == "arrival") else \
+                max(2, round(8.0 / interval)) if rid == "battery-saver" else 2
             if self.pending[rid] < needed:
                 continue
             if self.active and self.active["risk_id"] == rid:
-                continue    # episode in flight or confirmed-awaiting-resolution
+                # Battery-saver escalates within one story: when a completed
+                # stage didn't stop the drain, the next stage fires 12s after
+                # the last action (+28s Starlink → +40s rear A/C).
+                if (rid == "battery-saver"
+                        and self.active.get("stage") == "confirmed"
+                        and risk["actions"]
+                        and (derived.net_power_w(readings) or 0) < -50.0
+                        and now - self.active.get("acted_ts", 0) >= 12):
+                    pass    # fall through: run the next stage's episode
+                else:
+                    continue    # episode in flight or awaiting resolution
+
             # Uniform before-metrics so every confirmation has a real
             # baseline regardless of which detector fired.
             risk["metrics"].setdefault("net_w",
@@ -361,6 +452,10 @@ class Guardian:
 
     async def _run_episode(self, risk, readings, level, cfg):
         sim_only = cfg.get("source") == "sim"
+
+        def label(a):   # per-risk display names ("Shed rear A/C" vs generic)
+            return risk.get("labels", {}).get(a, ACTIONS[a]["label"])
+
         episode = await self.app.state.store.add_guardian_event(
             0, "detected", risk["title"], risk["detail"],
             json.dumps(risk["metrics"]))
@@ -372,14 +467,19 @@ class Guardian:
         proposals = [p for p in risk["proposals"]
                      if self._eligible(p, readings, level)]
         savings = sum(self._savings_w(a, readings) for a in eligible)
-        plan_txt = (" + ".join(ACTIONS[a]["label"] for a in eligible)
+        plan_txt = (" + ".join(label(a) for a in eligible)
                     or "no eligible automatic action")
 
+        if risk["id"] == "battery-saver":
+            self._saver_stage = risk.get("stage_no", 1)
         self.active = {"episode": episode, "risk_id": risk["id"],
                        "title": risk["title"], "stage": "decided",
-                       "metrics": risk["metrics"], "acted_ts": 0}
+                       "metrics": risk["metrics"], "acted_ts": 0,
+                       "stage_no": risk.get("stage_no"),
+                       "protected": risk.get("protected"),
+                       "labels": risk.get("labels", {})}
 
-        plan_labels = [ACTIONS[a]["label"] for a in eligible]
+        plan_labels = [label(a) for a in eligible]
         if level in ("observe",):
             await self._emit(episode, "decided", risk["title"],
                              f"autonomy level is observe - logging only "
@@ -405,14 +505,17 @@ class Guardian:
             return
 
         # protect / emergency: execute auto+interlock class, propose the rest.
+        # A risk's auto_override lifts named confirm-class actions to auto —
+        # the declared battery-saver exception (comfort loses to the battery).
         executed = []
         for a in eligible:
-            if ACTIONS[a]["permission"] in ("auto", "interlock"):
+            if ACTIONS[a]["permission"] in ("auto", "interlock") \
+                    or a in risk.get("auto_override", ()):
                 await self._execute(a)
                 executed.append(a)
         if executed:
-            done_labels = [ACTIONS[a]["label"] for a in executed]
-            reco_labels = [ACTIONS[p]["label"] for p in proposals]
+            done_labels = [label(a) for a in executed]
+            reco_labels = [label(p) for p in proposals]
             await self._emit(
                 self.active["episode"], "decided", risk["title"],
                 f"policy-approved plan: {plan_txt}, estimated saving "
@@ -462,6 +565,7 @@ class Guardian:
         self.last_action_ts = {}
         self.last_withheld_ts = 0.0
         self._was_moving = False
+        self._saver_stage = 0
         await self.app.state.store.set_meta("autonomy_level", "protect")
 
     def _build_card(self, events, readings, now, level, mode) -> dict | None:
@@ -496,12 +600,15 @@ class Guardian:
         engine = getattr(self.app.state, "engine", None)
         return {
             "stage": self.active["stage"],
+            "stage_no": self.active.get("stage_no"),
+            "escalating": self._escalating(readings),
             "title": self.active["title"],
             "detected_ts": mine[0]["ts"] if mine else now,
             "risk": risk,
             "actions": ddata.get("actions") or [],
             "recommended": ddata.get("recommended") or [],
             "savings_w": ddata.get("savings_w"),
+            "protected": self.active.get("protected") or [],
             "result": result,
             "receipt": {
                 "evidence": f"{fresh} fresh readings · " +
@@ -515,6 +622,32 @@ class Guardian:
             },
         }
 
+    def _escalating(self, readings) -> bool:
+        """True while an active battery-saver story expects another stage —
+        the UI holds the why-chip (and the eased pulse) until the ladder is
+        done, so the chip lands after the final shed, not the first."""
+        if not self.active or self.active.get("risk_id") != "battery-saver":
+            return False
+        return (bool(self._saver_ladder(readings))
+                and (derived.net_power_w(readings) or 0) < -50.0)
+
+    def _screen(self, readings) -> str | None:
+        """One word for the whole dashboard's demeanor (the filmed border
+        pulse): alarm = under 20% and Guardian hasn't acted yet; easing =
+        first stage acted, story still unwinding; calm = final stage
+        confirmed and the drain corrected. None = nothing to dramatize."""
+        soc = _get(readings, "shunt", "soc_pct")
+        if soc is None or soc > 20.0:
+            return None
+        saver = self.active if (self.active and
+                                self.active.get("risk_id") == "battery-saver") \
+            else None
+        if not saver or saver["stage"] in ("decided", "proposed"):
+            return "alarm"
+        if self._escalating(readings) or saver["stage"] == "acted":
+            return "easing"
+        return "calm" if saver["stage"] == "confirmed" else "easing"
+
     async def status(self) -> dict:
         store = self.app.state.store
         cfg = self.app.state.cfg
@@ -523,12 +656,14 @@ class Guardian:
         mode = (await store.get_meta("operating_mode")) or "camp"
         auto = [a["label"] for a in ACTIONS.values()
                 if a["permission"] in ("auto", "interlock")]
-        confirm = [a["label"] for a in ACTIONS.values()
-                   if a["permission"] == "confirm"]
+        confirm = [a["label"] + (" (auto under battery-saver, ≤20%)"
+                                 if k == "hvac_off" else "")
+                   for k, a in ACTIONS.items() if a["permission"] == "confirm"]
         events = await store.guardian_events(limit=24)
+        readings = await store.latest()
         card = None
         if self.active:
-            card = self._build_card(events, await store.latest(),
+            card = self._build_card(events, readings,
                                     int(time.time()), level, mode)
         return {
             "armed": level not in ("observe",) and cfg.get("source") == "sim",
@@ -542,6 +677,7 @@ class Guardian:
             "active": ({k: v for k, v in self.active.items()
                         if k != "metrics"} if self.active else None),
             "card": card,
+            "screen": self._screen(readings),
             "events": events,
         }
 
@@ -554,4 +690,6 @@ async def guardian_loop(app, interval_s: float) -> None:
             await app.state.guardian.evaluate()
         except Exception as e:
             log.warning("guardian evaluation failed: %s", e)
-        await asyncio.sleep(max(10.0, interval_s))
+        # A filmed take runs this at 1s so stage timing lands on the
+        # shot-list clock; anything below 1s is pointless (poll cadence).
+        await asyncio.sleep(max(1.0, interval_s))

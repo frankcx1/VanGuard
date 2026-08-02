@@ -112,12 +112,13 @@ def detector_checks() -> None:
     moved = abs(by_source(ems_m, "gps").get("lat", 0) - lat0)
     check("position actually travels", moved > 0.02, f"Δlat={moved:.4f}")
 
-    # The scripted demo fault: alternator vanishes ~30s into every drive
-    # while the chassis stays healthy — the alert/insight/Guardian cue.
+    # P11 replaced the old +30s scripted mid-drive fault with the take-gated
+    # forgot-switch story (scripts/verify_take.py). A drive with NO take
+    # armed stays healthy the whole way — charging throughout.
     chm = by_source(ems_m, "chassis")
-    check("scripted charging fault fires mid-drive (engine fine, alt 0W)",
+    check("no-take drive stays healthy mid-drive (engine on, alt charging)",
           chm.get("engine_running") == 1.0
-          and by_source(ems_m, "dcc50s").get("alt_power_w") == 0.0
+          and by_source(ems_m, "dcc50s").get("alt_power_w", 0) > 300
           and chm.get("chassis_v", 0) > 13.8,
           f"alt={by_source(ems_m, 'dcc50s').get('alt_power_w')}W, "
           f"chassis={chm.get('chassis_v')}V")
@@ -130,13 +131,13 @@ def detector_checks() -> None:
     gpp = by_source(ems_p, "gps")
     check("park: engine off, stream zeroes",
           chp.get("engine_running") == 0.0 and chp.get("rpm") == 0.0)
-    check("park resets the take: trip zeroed, back home, fault cleared",
+    check("park resets the take: trip zeroed, back home",
           gpp.get("trip_mi") == 0.0
           and abs(gpp.get("lat", 0) - home[0]) < 0.001)
     dv.apply_command({"target": "drive", "on": True, "speed_mph": 30})
     dv.advance(15)
     ems_2 = dv.emit(1_770_000_830)
-    check("next drive starts healthy (no fault for the first 30s)",
+    check("next drive also healthy (forgot-switch is take-gated)",
           by_source(ems_2, "dcc50s").get("alt_power_w", 0) > 300,
           f"alt={by_source(ems_2, 'dcc50s').get('alt_power_w')}W")
     dv.apply_command({"target": "drive", "on": False})

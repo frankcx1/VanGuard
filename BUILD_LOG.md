@@ -607,3 +607,79 @@ Added `web/favicon.svg` — camper van in the dashboard's fixed entity colors
 Inline SVG, no binary asset, served by the existing `/static` mount; verified
 at 16/32/96 px via headless-Edge render. Browser tabs and the Edge `--app`
 window now show the van instead of the default globe.
+
+---
+
+## 2026-08-01 — P11: The take — app rebuilt to the production shot list
+
+Frank delivered `VanGuard_Scripts_ShotList.docx` (Cut A ~2:57 YouTube, Cut B
+~72s LinkedIn). It rewrites the demo drive's story: not a mysterious mid-drive
+charging fault, but **"I forgot the switch"** — the alternator→house charge
+switch never flipped, rear A/C running for the dogs, battery crossing 20% on
+a fixed clock from the Drive press, and a two-stage priority shed. The old
++30s scripted `_drive_fault` is **replaced** (Frank's call), and verify_p9's
+fault checks updated to assert a no-take drive stays healthy.
+
+Built:
+- **Take profiles** (`sim/scenarios.py: Take/TAKES`, `-Take` on demo.ps1):
+  `forgot_switch` (crossing +20s) and `forgot_switch_fast` (+12s). Plumbed
+  through config → SimSource → seed_db.
+- **Van model**: `charge_switch_on` (the physical switch; False = the story —
+  chassis healthy, house input 0W), rear A/C on as a Drive-press side effect
+  (~900W, the honest drain), SOC **pinned at its mark while parked** so the
+  event clock starts at the press regardless of setup time
+  (`Battery.pin_for_take` — the one sanctioned exception to "SOC is never
+  assigned", disclosed here), dish pre-armed online+warm (~24W steady, so
+  Stage 1 sheds the shot-list number, not 58W boot draw), **Park = full take
+  reset** (SOC re-pinned, A/C off, dish warm again, switch still forgotten).
+  Shunt SOC emission stepped at 0.1% (was 1%) so the crossing is visible.
+- **Guardian battery-saver** (`detect_battery_saver`): SOC ≤ 20% + net drain
+  → staged shed in the owner's priority order, ONE action per stage with
+  12s re-verify between: Stage 1 Starlink (~+28s), Stage 2 rear A/C (~+40s).
+  `hvac_off` stays confirm-class globally; the battery-saver risk carries an
+  **auto_override** — the declared exception (comfort loses to the battery
+  below 20%), noted in the policy panel. Card gains STAGE n, PROTECTED:
+  fridge · freezer (structurally unsheddable — not in the registry), and an
+  `escalating` flag that holds the why-chip until the final stage. Risk
+  runs exclusively while active (one calm card, no overlapping episodes);
+  detector set is config-narrowable (`guardian.detectors`) so
+  alternator-gap/reserve don't talk over the story during a take.
+- **Screen demeanor** (`/api/guardian → screen`): `alarm` (red border pulse,
+  1.1s) under 20% before any action → `easing` (slow amber breath) once
+  Stage 1 acts → calm/none after recovery confirms. Pure overlay, honors
+  prefers-reduced-motion (FILMING.md notes the Windows setting).
+- **Alert discipline for the take** (config, not hardcode): soc_warn at
+  20.0 (the crossing IS the single warning), tte_warn tightened,
+  alt-missing downgraded to advisory, reserve-forecast off — battery-saver
+  owns the under-20 story on screen. SOC alerts show one decimal below 25%;
+  battery hero likewise below 30%.
+- **Cadence**: take config runs poll + guardian at 1s (loop clamp was 10s);
+  UI polls guardian at 2s and telemetry at 2s so the beats don't lag.
+- Story mode steps 10–12 rewritten to the new narrative; FILMING.md
+  rewritten around the take; video/SHOT_LIST.md marked superseded by the
+  docx.
+
+What broke / got tuned:
+- First timing run: crossing +22s (start_soc 20.17 too high) → tuned to
+  20.158 / 20.114 (fast) against the harness; targets now land +19–20s /
+  +12s, Stage 1 +26–27s, Stage 2 +38–39s, chip right after Stage 2.
+- reserve-forecast warning fired pre-drive at 20.2% (take lives at the
+  reserve line by design) → the `reserve_warning` rule toggle above.
+- Harness initially read the *previous* take's acted events after a Park
+  (guardian_events window) → filter by press timestamp.
+- **Live-stack race the fake-clock harness couldn't see:** on the real
+  two-process stack, Park's guardian reset lands before the poller applies
+  the drive-off command, so the arrival detector saw the moving→parked
+  transition *after* the reset and re-shed the dish the reset had just
+  restored — leaving the next take's Stage 1 with a booting dish. Fix:
+  a take's detector list drops `arrival` (Park is the reset button between
+  takes, not a story beat). Found only because the launch was tested for
+  real after the harness passed.
+
+Verification: new **`scripts/verify_take.py`** — 44/44: the full event
+clock for both takes (fake 1s clock, real SimSource/Store/Guardian, no
+sleeps), single-warning discipline, screen alarm→easing→calm sequence,
+PROTECTED card, 0-external receipt, Park reset (SOC/A-C/dish/pulse), and
+the filming flow itself — a second take pressed at an odd phase after a
+Park reproduces crossing/Stage 1/Stage 2 **within 1s**. Full regression
+green: p1 20/20, p2 13/13, p4, p5, p6, p8 25/25, p9 35/35.
