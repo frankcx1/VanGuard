@@ -72,9 +72,17 @@ the details.
 
 Four tabs, big tiles: **🚐 Van** (Battery hero, Power Flow, Climate/Network,
 Chassis + Drive, Outlook — the whole take plays here) · **✨ AI** (Insight,
-Ask + Guardian home) · **📋 Log** (Alerts, Diagnostics) · **🗺️ Trip**
-(route + offline POIs). Keys **1–4** switch tabs, **G** toggles the classic
-one-screen grid (also `#grid` in the URL; the toggle is remembered).
+Ask + Guardian home, presentation-scale type) · **📋 Log** (Monitoring —
+all 60 channels grouped by system with sub-tabs — plus Alerts, Diagnostics)
+· **🗺️ Trip** (trip status + the area overview from offline POI data + the
+on-demand ☁ cloud expert). Keys **1–4** switch tabs, **G** toggles the
+classic one-screen grid (also `#grid` in the URL; the toggle is remembered).
+
+**The cloud expert (Trip tab) and the filmed claims:** "zero calls to the
+internet" stays true on camera — the expert is strictly on demand (nothing
+is sent until the Search press), it's disabled without an `ANTHROPIC_API_KEY`
+env var, and every use is audited as EXTERNAL and counted separately in
+Diagnostics. Don't press Search during a take unless the story wants it.
 
 While a Guardian episode is live and you're not on the AI tab, the live
 block — timeline, STAGE card, approve row — **slides up as an overlay over

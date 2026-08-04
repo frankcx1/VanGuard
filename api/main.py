@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -521,7 +522,8 @@ def create_app(cfg: dict | None = None) -> FastAPI:
         return stamp({"queued": cmd_id})
 
     @app.get("/api/trip")
-    async def trip(radius_mi: float = Query(default=15.0, ge=1, le=100)):
+    async def trip(radius_mi: float = Query(default=15.0, ge=1, le=100),
+                   limit: int = Query(default=6, ge=1, le=40)):
         readings = await app.state.store.latest()
         gps = {m: v for m, (ts, v) in readings.get("gps", {}).items()}
         if not gps:
@@ -534,8 +536,94 @@ def create_app(cfg: dict | None = None) -> FastAPI:
                     "heading_deg": gps.get("heading_deg"),
                     "moving": (gps.get("speed_mph") or 0) > 2.0},
             "miles_today": track_miles(lat_hist, lon_hist),
-            "nearby": nearby_pois(gps["lat"], gps["lon"], radius_mi),
+            "nearby": nearby_pois(gps["lat"], gps["lon"], radius_mi, limit),
         })
+
+    # ---- the cloud expert (Trip tab) ------------------------------------
+    # The ONE deliberate exception to no-cloud-at-runtime, by Frank's call
+    # ("rent the expert, own the workhorse"): a strictly on-demand button
+    # press sends the typed question + the van's position — nothing else —
+    # to the Claude API for expert local input (RV parks, diesel, area).
+    # Every call is audited as device=CLOUD so the receipts stay honest.
+    # The local pipeline (chat, Guardian, telemetry) never touches this.
+
+    @app.get("/api/cloud/status")
+    async def cloud_status():
+        return stamp({"configured": bool(os.environ.get("ANTHROPIC_API_KEY"))})
+
+    class CloudSearchQuery(BaseModel):
+        question: str = Field(min_length=3, max_length=500)
+
+    @app.post("/api/cloud/search")
+    async def cloud_search(body: CloudSearchQuery):
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            raise HTTPException(
+                503, "cloud expert not configured — set ANTHROPIC_API_KEY and relaunch")
+        try:
+            import anthropic
+        except ImportError:
+            raise HTTPException(503, "anthropic package not installed in the venv")
+        readings = await app.state.store.latest()
+        gps = {m: v for m, (ts, v) in readings.get("gps", {}).items()}
+        lat, lon = gps.get("lat"), gps.get("lon")
+        if lat is None or lon is None:
+            raise HTTPException(503, "no GPS fix to anchor the search")
+
+        prompt = (
+            "You are a road-travel expert advising the driver of a 24-foot "
+            "Mercedes Sprinter camper van (diesel, tall roof). The van is "
+            f"currently at latitude {lat:.4f}, longitude {lon:.4f}. "
+            "Answer for a dashboard screen: concise, concrete, no preamble — "
+            "a short list with names, distances, and one useful line each "
+            "beats prose. If you are not confident something exists, say so "
+            f"rather than guessing.\n\nQuestion: {body.question}")
+
+        def _ask():
+            client = anthropic.Anthropic(timeout=90.0)
+            msgs = [{"role": "user", "content": prompt}]
+            resp = None
+            for _ in range(3):
+                resp = client.beta.messages.create(
+                    model="claude-opus-5",
+                    max_tokens=1500,
+                    output_config={"effort": "medium"},
+                    # Opus 5's safety classifiers can decline a request;
+                    # "default" re-serves it on the recommended fallback
+                    # model inside the same call.
+                    betas=["server-side-fallback-2026-07-01"],
+                    fallbacks="default",
+                    tools=[{"type": "web_search_20260209", "name": "web_search",
+                            "max_uses": 3}],
+                    messages=msgs,
+                )
+                if resp.stop_reason != "pause_turn":
+                    break
+                # Server-side tool loop paused — re-send to resume.
+                msgs = [{"role": "user", "content": prompt},
+                        {"role": "assistant", "content": resp.content}]
+            return resp
+
+        t0 = time.monotonic()
+        try:
+            resp = await run_in_threadpool(_ask)
+        except anthropic.APIConnectionError:
+            raise HTTPException(502, "no route to the cloud — check the uplink")
+        except anthropic.APIStatusError as exc:
+            raise HTTPException(502, f"cloud API error {exc.status_code}")
+        if resp.stop_reason == "refusal":
+            answer = "The cloud expert declined to answer this question."
+        else:
+            answer = "\n".join(
+                b.text for b in resp.content if b.type == "text").strip() \
+                or "(no answer returned)"
+        await app.state.store.audit(
+            tool="cloud_expert_search",
+            args_json=json.dumps({"question": body.question,
+                                  "lat": round(lat, 3), "lon": round(lon, 3)}),
+            result_hash="-", device="CLOUD",
+            duration_ms=int((time.monotonic() - t0) * 1000))
+        return stamp({"answer": answer, "model": resp.model,
+                      "lat": lat, "lon": lon})
 
     @app.post("/api/dictate")
     async def dictate():

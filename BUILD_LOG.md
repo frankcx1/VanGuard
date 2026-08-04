@@ -848,3 +848,43 @@ bad-instance day can't reach a take: READY now means the buttons work.
 Verified live: relaunch green, smoke 200, and the model pre-warm came up
 clean too (the smoke test's settling time seems to help that race).
 FILMING.md troubleshooting updated.
+
+---
+
+## 2026-08-03 — P13: the other three tabs earn their keep
+
+Frank's notes after signing off on the Van tab for Wednesday's shoot:
+bigger type everywhere else, a real monitoring view, and a bigger Trip.
+
+- **AI tab at presentation scale** — insight prose 19px, chat 17px,
+  Guardian card/policy text up a size across the board. Scoped to
+  `[data-tab="ai"]` so the Guardian overlay (Van-tab take choreography)
+  and the classic grid keep their proven sizes.
+- **Log tab: the Monitoring view** — default view is now everything
+  being watched: all 60 telemetry channels in one catalog
+  (`MON_GROUPS`), grouped by system behind sub-tabs (Battery · Charging
+  · 110V & loads · Climate · Network · Chassis · Position), ordered
+  most-interesting-first, big value cells with per-reading freshness
+  dots, scrollable. Missing channels (e-bikes not latched) simply don't
+  render. Alerts + Diagnostics moved to a band beneath.
+- **Trip tab: the area overview** — the offline POI notes finally show:
+  grouped 🥾 Hikes & trails / 🍴 Food & town / 🌲 Parks & water, name +
+  distance + description at readable sizes. `/api/trip` gained a `limit`
+  param (UI asks for 24; regional datasets carry ~14 each).
+- **☁ Ask the Expert (Frank's call — "rent the expert, own the
+  workhorse")**: the ONE deliberate exception to no-cloud-at-runtime.
+  Strictly on demand: a Search press sends the typed question + the
+  van's position — nothing else — to the Claude API (claude-opus-5,
+  web_search tool for real local data, server-side fallbacks on).
+  Gated three ways: button disabled without a sim uplink, 503 without
+  `ANTHROPIC_API_KEY`, and nothing ever fires without a press. Every
+  call audited as device=CLOUD; the Diagnostics line now counts
+  external calls honestly instead of claiming "no cloud endpoints
+  exist"; privacy-badge tooltip updated to disclose the exception.
+  `anthropic` 0.120.2 added to the venv. Key not yet configured —
+  Frank sets ANTHROPIC_API_KEY as a user env var when ready.
+
+Verified: headless-Edge frames of all four tabs at 1920×1080 (Van
+untouched — take state, e-bike node, hero sizes all as filmed);
+cloud/status + trip?limit=24 live; **verify_take 53/53** and
+**verify_p5 50/50** green, so the shot-list clock is unaffected.

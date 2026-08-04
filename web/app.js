@@ -114,6 +114,131 @@ async function refreshLatest() {
   setChassisBlock(rd);
   fillTable(rd, data.server_ts);
   updateDiagSummary(rd, data.server_ts);
+  renderMonitor(rd, data.server_ts);
+}
+
+/* ---- Log tab: everything being monitored, grouped by system ---------------
+   One catalog drives the whole view: [source, metric, label, format],
+   ordered most-interesting-first within each group. Metrics missing from
+   the current telemetry (e.g. no e-bike chargers latched) just don't
+   render — the view always reflects what is actually being watched. */
+
+const onOff = v => (v === 1 ? "on" : "off");
+const MON_GROUPS = [
+  { key: "battery", label: "Battery", rows: [
+    ["shunt", "soc_pct", "State of charge", v => `${v.toFixed(1)} %`],
+    ["shunt", "power_w", "Battery power", v => `${v > 0 ? "+" : ""}${v.toFixed(0)} W`],
+    ["shunt", "current_a", "Current", v => `${v > 0 ? "+" : ""}${v.toFixed(1)} A`],
+    ["shunt", "voltage_v", "Voltage", v => `${v.toFixed(2)} V`],
+    ["shunt", "temp_c", "Battery temp", v => `${cToF(v).toFixed(0)} °F`],
+    ["shunt", "charge_ah_total", "Charged, lifetime", v => `${v.toFixed(1)} Ah`],
+    ["shunt", "discharge_ah_total", "Discharged, lifetime", v => `${v.toFixed(1)} Ah`],
+  ]},
+  { key: "charging", label: "Charging", rows: [
+    ["dcc50s", "pv_power_w", "Solar power", v => `${v.toFixed(0)} W`],
+    ["dcc50s", "daily_yield_wh", "Solar yield today", v => `${v.toFixed(0)} Wh`],
+    ["dcc50s", "charge_current_a", "Charge current", v => `${v.toFixed(1)} A`],
+    ["dcc50s", "alt_power_w", "Alternator power", v => `${v.toFixed(0)} W`],
+    ["dcc50s", "pv_voltage_v", "PV voltage", v => `${v.toFixed(1)} V`],
+    ["dcc50s", "pv_current_a", "PV current", v => `${v.toFixed(1)} A`],
+    ["dcc50s", "controller_temp_c", "Controller temp", v => `${cToF(v).toFixed(0)} °F`],
+    ["charge_ctl", "solar_on", "Solar input", onOff],
+    ["charge_ctl", "alternator_on", "Alternator input", onOff],
+    ["charge_ctl", "shore_on", "Shore input", onOff],
+  ]},
+  { key: "loads", label: "110V & loads", rows: [
+    ["inverter", "state", "Inverter", v => ({ 0: "off", 1: "idle", 2: "inverting", 3: "bypass" }[v] ?? "–")],
+    ["inverter", "ac_out_w", "AC output", v => `${v.toFixed(0)} W`],
+    ["inverter", "dc_in_w", "DC draw", v => `${v.toFixed(0)} W`],
+    ["inverter", "load_pct", "Inverter load", v => `${v.toFixed(0)} %`],
+    ["switches", "fridge_w", "Fridge", v => `${v.toFixed(0)} W`],
+    ["switches", "freezer_w", "Freezer", v => `${v.toFixed(0)} W`],
+    ["switches", "fridge_on", "Fridge switch", onOff],
+    ["switches", "freezer_on", "Freezer switch", onOff],
+    ["ebike", "battery_pct", "E-bike pack", v => `${v.toFixed(0)} %`],
+    ["ebike", "power_w", "E-bike chargers", v => `${v.toFixed(0)} W`],
+    ["ebike", "charging", "E-bike charging", onOff],
+  ]},
+  { key: "climate", label: "Climate", rows: [
+    ["hvac", "cabin_temp_c", "Cabin temp", v => `${cToF(v).toFixed(1)} °F`],
+    ["hvac", "mode", "HVAC mode", v => ({ 0: "off", 1: "heat", 2: "cool" }[v] ?? "–")],
+    ["hvac", "setpoint_c", "Setpoint", v => `${cToF(v).toFixed(0)} °F`],
+    ["hvac", "hvac_power_w", "HVAC power", v => `${v.toFixed(0)} W`],
+  ]},
+  { key: "network", label: "Network", rows: [
+    ["network", "mode", "Uplink", v => NET_LABELS[v] ?? "off"],
+    ["network", "down_mbps", "Downlink", v => `${v.toFixed(0)} Mbps`],
+    ["network", "up_mbps", "Uplink speed", v => `${v.toFixed(1)} Mbps`],
+    ["network", "latency_ms", "Latency", v => `${v.toFixed(0)} ms`],
+    ["network", "signal_pct", "Signal", v => `${v.toFixed(0)} %`],
+    ["starlink", "state", "Dish", v => ({ 0: "booting", 1: "online", 2: "obstructed" }[v] ?? "–")],
+    ["starlink", "power_w", "Dish power", v => `${v.toFixed(1)} W`],
+    ["starlink", "obstruction_pct", "Obstruction", v => `${v.toFixed(1)} %`],
+  ]},
+  { key: "chassis", label: "Chassis", rows: [
+    ["chassis", "engine_running", "Engine", v => (v === 1 ? "running" : "off")],
+    ["chassis", "speed_mph", "Speed", v => `${v.toFixed(0)} mph`],
+    ["chassis", "fuel_pct", "Fuel", v => `${v.toFixed(0)} %`],
+    ["chassis", "range_mi", "Range", v => `${v.toFixed(0)} mi`],
+    ["chassis", "def_pct", "DEF", v => `${v.toFixed(0)} %`],
+    ["chassis", "chassis_v", "Chassis battery", v => `${v.toFixed(2)} V`],
+    ["chassis", "coolant_c", "Coolant", v => `${cToF(v).toFixed(0)} °F`],
+    ["chassis", "rpm", "Engine speed", v => `${v.toFixed(0)} rpm`],
+    ["chassis", "engine_load_pct", "Engine load", v => `${v.toFixed(0)} %`],
+    ["chassis", "boost_psi", "Turbo boost", v => `${v.toFixed(1)} psi`],
+    ["chassis", "fuel_rate_gph", "Fuel rate", v => `${v.toFixed(1)} gph`],
+    ["chassis", "dtc_count", "Trouble codes", v => `${v.toFixed(0)}`],
+    ["chassis", "odometer_mi", "Odometer", v => `${v.toFixed(0)} mi`],
+    ["chassis", "ignition", "Ignition", onOff],
+  ]},
+  { key: "position", label: "Position", rows: [
+    ["gps", "speed_mph", "GPS speed", v => `${v.toFixed(0)} mph`],
+    ["gps", "trip_mi", "Trip today", v => `${v.toFixed(1)} mi`],
+    ["gps", "heading_deg", "Heading", v => `${v.toFixed(0)}°`],
+    ["gps", "lat", "Latitude", v => v.toFixed(5)],
+    ["gps", "lon", "Longitude", v => v.toFixed(5)],
+  ]},
+];
+
+let monActive = "battery";
+
+for (const g of MON_GROUPS) {
+  const b = document.createElement("button");
+  b.textContent = g.label;
+  b.dataset.mon = g.key;
+  b.setAttribute("role", "tab");
+  b.addEventListener("click", () => {
+    monActive = g.key;
+    if (lastReadings) renderMonitor(lastReadings, Date.now() / 1000);
+  });
+  $("mon-tabs").appendChild(b);
+}
+
+function renderMonitor(rd, serverTs) {
+  const group = MON_GROUPS.find(g => g.key === monActive) ?? MON_GROUPS[0];
+  document.querySelectorAll("#mon-tabs button").forEach(b => {
+    b.classList.toggle("on", b.dataset.mon === group.key);
+    b.setAttribute("aria-selected", String(b.dataset.mon === group.key));
+  });
+  const cells = [];
+  for (const [src, metric, label, fmt] of group.rows) {
+    const m = rd?.[src]?.[metric];
+    if (!m) continue;
+    const age = serverTs - m.ts;
+    cells.push(
+      `<div class="mon-cell">` +
+      `<span class="mon-label">${label}</span>` +
+      `<span class="mon-value">${fmt(m.value)}</span>` +
+      `<span class="mon-age ${ageClass(age)}" title="reading age">● ${fmtAge(age)}</span>` +
+      `</div>`);
+  }
+  $("mon-list").innerHTML = cells.join("");
+  let total = 0, stale = 0;
+  for (const per of Object.values(rd ?? {})) {
+    for (const { ts } of Object.values(per)) { total += 1; if (serverTs - ts > 45) stale += 1; }
+  }
+  $("mon-count").textContent =
+    `${total} channels watched · ${stale === 0 ? "all fresh" : `${stale} stale`}`;
 }
 
 function setChassisBlock(rd) {
@@ -155,6 +280,8 @@ function setNetworkTile(rd) {
   const net = rd?.network;
   if (!net) return;
   const mode = net.mode?.value ?? 0;
+  lastNetMode = (mode === 3 && rd?.starlink?.state?.value === 0) ? 0 : mode;
+  updateCloudState();
   const modeName = NET_MODES[mode];
   const sig = net.signal_pct?.value ?? 0;
   const sl = rd?.starlink;
@@ -907,7 +1034,7 @@ async function refreshAlerts() {
 /* ---- trip -------------------------------------------------------------------------- */
 
 async function refreshTrip() {
-  const t = await (await fetch("/api/trip")).json();
+  const t = await (await fetch("/api/trip?limit=24")).json();
   if (!t.fix) { $("trip-pos").textContent = "no GPS fix"; return; }
   $("trip-mi").textContent = t.miles_today.toFixed(1);
   $("trip-state").textContent = t.fix.moving
@@ -923,7 +1050,103 @@ async function refreshTrip() {
   $("poi-list").innerHTML = (t.nearby ?? []).slice(0, 3).map(p =>
     `<li>${escapeHtml(p.name)} <span class="dist">· ${p.type} · ${p.dist_mi} mi</span></li>`
   ).join("");
+  renderArea(t.nearby ?? []);
 }
+
+/* ---- Trip tab: the area overview + on-demand cloud expert ------------------ */
+
+const AREA_GROUPS = [
+  { title: "🥾 Hikes & trails", types: ["hike", "bike", "overlook"] },
+  { title: "🍴 Food & town", types: ["food", "museum", "info", "tour"] },
+  { title: "🌲 Parks & water", types: ["park", "nature", "garden", "waterfront",
+                                       "swim", "beach", "surf", "paddle", "camp"] },
+];
+
+function renderArea(pois) {
+  const known = new Set(AREA_GROUPS.flatMap(g => g.types));
+  const groups = AREA_GROUPS.map(g =>
+    ({ ...g, pois: pois.filter(p => g.types.includes(p.type)) }));
+  const rest = pois.filter(p => !known.has(p.type));
+  if (rest.length) groups.push({ title: "📍 More nearby", pois: rest });
+  $("area-groups").innerHTML = groups.filter(g => g.pois.length).map(g =>
+    `<div class="area-group"><h3>${g.title}</h3>` +
+    g.pois.map(p =>
+      `<div class="area-poi"><span class="ap-name">${escapeHtml(p.name)}` +
+      `<span class="ap-dist">${p.dist_mi} mi</span></span>` +
+      `<span class="ap-note">${escapeHtml(p.note ?? "")}</span></div>`).join("") +
+    `</div>`).join("")
+    || `<p class="ap-note">no offline POI data for this area</p>`;
+}
+
+/* Cloud expert search — strictly on demand. Rent the expert, own the
+   workhorse: nothing is sent anywhere until the Search press; the backend
+   reads the van's position once at that moment; the local pipeline (chat,
+   Guardian, telemetry) is never involved. The uplink state only gates the
+   button — checking it calls nothing. */
+
+let lastNetMode = 0;
+let cloudConfigured = null;   // null until /api/cloud/status answers
+
+function updateCloudState() {
+  const state = $("cs-state");
+  if (!state) return;
+  const online = lastNetMode !== 0;
+  const ready = online && cloudConfigured === true;
+  $("cs-send").disabled = !ready;
+  document.querySelectorAll("#cs-chips button").forEach(b => { b.disabled = !ready; });
+  if (!online) {
+    state.textContent = "no uplink — offline data only";
+    state.className = "status plain";
+  } else if (cloudConfigured === false) {
+    state.textContent = "uplink up · no API key configured";
+    state.className = "status warn";
+    state.title = "Set the ANTHROPIC_API_KEY environment variable and relaunch to enable the cloud expert.";
+  } else if (cloudConfigured === true) {
+    state.textContent = "uplink up · on demand — nothing sent until you press Search";
+    state.className = "status good";
+  }
+}
+
+async function refreshCloudStatus() {
+  try {
+    const s = await (await fetch("/api/cloud/status")).json();
+    cloudConfigured = s.configured === true;
+  } catch { cloudConfigured = false; }
+  updateCloudState();
+}
+
+async function sendCloudSearch(question) {
+  const log = $("cs-log");
+  log.insertAdjacentHTML("afterbegin",
+    `<div class="msg user">${escapeHtml(question)}</div>`);
+  const pending = document.createElement("div");
+  pending.className = "msg assistant pending";
+  pending.textContent = "☁ asking the cloud expert… (question + position leave the device now)";
+  log.prepend(pending);
+  $("cs-input").value = "";
+  $("cs-send").disabled = true;
+  try {
+    const r = await postJson("/api/cloud/search", { question });
+    pending.classList.remove("pending");
+    pending.innerHTML = mdLite(escapeHtml(r.answer)) +
+      `<span class="meta">☁ EXTERNAL · ${escapeHtml(r.model)} · ` +
+      `sent: question + position (${r.lat.toFixed(3)}, ${r.lon.toFixed(3)}) · audited</span>`;
+    refreshAudit();
+  } catch (e) {
+    pending.classList.remove("pending");
+    pending.innerHTML = `<em>cloud error: ${escapeHtml(String(e.message))}</em>`;
+  } finally {
+    updateCloudState();
+  }
+}
+
+$("cs-form").addEventListener("submit", ev => {
+  ev.preventDefault();
+  const q = $("cs-input").value.trim();
+  if (q && !$("cs-send").disabled) sendCloudSearch(q);
+});
+document.querySelectorAll("#cs-chips button").forEach(b =>
+  b.addEventListener("click", () => { if (!b.disabled) sendCloudSearch(b.dataset.cq); }));
 
 $("drive-btn").addEventListener("click", async () => {
   const on = $("drive-btn").dataset.on !== "1";
@@ -948,6 +1171,7 @@ $("drive-btn").addEventListener("click", async () => {
 /* ---- diagnostics ---------------------------------------------------------------------- */
 
 let auditCount = 0;
+let externalCount = 0;   // opt-in Trip cloud searches, audited as CLOUD
 
 function updateDiagSummary(rd, serverTs) {
   let n = 0, stale = 0;
@@ -959,7 +1183,10 @@ function updateDiagSummary(rd, serverTs) {
   }
   $("diag-summary").textContent =
     `${n} readings · ${stale === 0 ? "all fresh" : `${stale} stale`} · ` +
-    `${auditCount} local tool calls · 0 external calls (no cloud endpoints exist)`;
+    `${auditCount} local tool calls · ` +
+    (externalCount
+      ? `${externalCount} external (Trip cloud expert, on demand)`
+      : "0 external calls (local pipeline has no cloud dependency)");
 }
 
 function ageClass(age) {
@@ -995,7 +1222,8 @@ function fillTable(rd, serverTs) {
 
 async function refreshAudit() {
   const { entries } = await (await fetch("/api/audit?limit=40")).json();
-  auditCount = entries?.length ?? 0;
+  externalCount = (entries ?? []).filter(e => e.device === "CLOUD").length;
+  auditCount = (entries?.length ?? 0) - externalCount;
   const tbody = $("audit-table").querySelector("tbody");
   tbody.innerHTML = (entries ?? []).map(e =>
     `<tr><td>${new Date(e.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>` +
@@ -1404,6 +1632,7 @@ refreshTrip();
 refreshRuntime();
 refreshWatchdog();
 refreshGuardian();
+refreshCloudStatus();
 setInterval(refreshWatchdog, 30_000);
 // 2s: guardian stage transitions are the on-camera choreography — a 10s
 // UI cadence would visibly lag the +28s/+40s shot-list beats.

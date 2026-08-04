@@ -18,7 +18,7 @@
     <span id="sim-badge" class="badge sim hidden">⚠ SIM DATA</span>
     <span class="badge rail" id="ai-badge" title="Local inference status, reported by the loaded runtime - never assumed">LOCAL AI: …</span>
     <span class="badge rail" id="privacy-badge"
-      title="No cloud endpoint is configured or required. Telemetry is generated and processed on this device. Nothing is transmitted externally - this is a design guarantee of the demo build, not a measured network audit.">🔒 DATA STAYS ON DEVICE</span>
+      title="Telemetry, voice, reasoning, and decisions are processed on this device; the local pipeline has no cloud dependency. The one opt-in exception: the Trip tab's cloud expert search, which sends only your typed question and the van's position when you press Search - every such call is audited as EXTERNAL.">🔒 DATA STAYS ON DEVICE</span>
     <span class="badge rail" id="mic-badge">🎤 MIC READY</span>
     <label class="badge rail mode-wrap">mode
       <select id="mode-sel" aria-label="Operating mode">
@@ -167,6 +167,32 @@
     <ul id="poi-list"></ul>
   </section>
 
+  <section class="tile area-tile" data-tab="trip">
+    <div class="tile-head"><h2>In the area</h2>
+      <span class="status plain">offline POI data · on device</span></div>
+    <div class="area-groups" id="area-groups"></div>
+    <div class="cloud-search" id="cloud-search">
+      <div class="cs-head">
+        <span class="cs-title">☁ ASK THE EXPERT</span>
+        <span id="cs-state" class="status plain">checking uplink…</span>
+      </div>
+      <div class="chips-row" id="cs-chips">
+        <button data-cq="Best RV parks and campgrounds near this position for a 24-foot Sprinter camper van — names, distance, and one line on why.">RV parks &amp; campgrounds</button>
+        <button data-cq="Closest diesel stations to this position with easy big-van access. Names, roads, and distance.">closest diesel</button>
+        <button data-cq="What is most worth doing within 30 minutes of this position in the next day? Short list with one line each.">what's worth doing?</button>
+      </div>
+      <form id="cs-form">
+        <input id="cs-input" type="text" autocomplete="off"
+               placeholder="Ask a cloud expert about the area…">
+        <button id="cs-send" type="submit">☁ Search</button>
+      </form>
+      <div id="cs-log" aria-live="polite"></div>
+      <p class="cs-note">online feature — sends only your question and the van's position to
+        the Claude API when you press Search · answers are marked EXTERNAL and audited ·
+        telemetry, voice, and the Guardian never leave the device</p>
+    </div>
+  </section>
+
   <section class="tile wide chat-tile" data-tab="ai">
     <div class="tile-head"><h2>Ask VanGuard</h2><span id="chat-meta" class="status plain"></span></div>
     <div class="chips-row" id="chat-chips">
@@ -214,6 +240,12 @@
         <div class="g-policy" id="g-policy"></div>
       </details>
     </div>
+  </section>
+
+  <section class="tile monitor-tile" data-tab="log">
+    <div class="tile-head"><h2>Monitoring</h2><span id="mon-count" class="status plain"></span></div>
+    <div class="mon-tabs" id="mon-tabs" role="tablist" aria-label="Monitored systems"></div>
+    <div class="mon-list" id="mon-list"></div>
   </section>
 
   <section class="tile scrolly alerts-tile" data-tab="log">
