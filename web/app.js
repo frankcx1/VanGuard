@@ -295,6 +295,17 @@ function setFlowPanel(rd, dv) {
     ? `${(rd.hvac.hvac_power_w?.value ?? 0).toFixed(0)} W` : "off";
   setToggle($("acu-btn"), acOn);
 
+  // E-bike smart chargers: pack % the way the bike's BLE service reports it.
+  const eb = rd?.ebike;
+  $("ebike-btn").classList.toggle("hidden", !eb);
+  if (eb) {
+    const ebOn = eb.charging?.value === 1;
+    $("f-ebike").textContent = ebOn
+      ? `${(eb.battery_pct?.value ?? 0).toFixed(0)}% · ${(eb.power_w?.value ?? 0).toFixed(0)} W`
+      : `${(eb.battery_pct?.value ?? 0).toFixed(0)}% · off`;
+    setToggle($("ebike-btn"), ebOn);
+  }
+
   // Battery-only runtime readout: reacts live as loads are toggled.
   const soc = get(rd, "shunt", "soc_pct");
   const tte = dv?.time_to_empty_h, ttf = dv?.time_to_full_h;
@@ -357,6 +368,19 @@ $("cooktop-btn").addEventListener("click", async () => {
   }
   try {
     await postJson("/api/appliance", { name: "cooktop", on });
+    refreshAudit();
+  } catch (e) { showFlowNote(String(e.message)); }
+});
+
+$("ebike-btn").addEventListener("click", async () => {
+  const on = $("ebike-btn").dataset.on !== "1";
+  optimistic($("ebike-btn"), on);
+  if (on && $("inverter-btn").dataset.on !== "1") {
+    optimistic($("inverter-btn"), true);
+    showFlowNote("inverter was off — switching it on so the chargers have 110V");
+  }
+  try {
+    await postJson("/api/appliance", { name: "ebikes", on });
     refreshAudit();
   } catch (e) { showFlowNote(String(e.message)); }
 });
@@ -581,6 +605,78 @@ async function refreshRuntime() {
       ? "AI ready · not loaded yet" : "deterministic mode");
 }
 
+/* ---- tabs vs classic grid ----------------------------------------------------
+   Camera-friendly view (default): four tabs — Van / AI / Log / Trip — so each
+   scene is a few big tiles instead of nine small ones. The proven one-screen
+   grid stays one tap away (⊞ grid, or open with #grid). While a Guardian
+   episode is live and the AI tab isn't showing, the whole live block
+   (timeline + card + approve) reparents into a global overlay: the Guardian
+   moment must never play behind a tab. */
+
+const TAB_NAMES = ["van", "ai", "log", "trip"];
+let viewMode = localStorage.getItem("vg-view") || "tabs";   // "tabs" | "grid"
+let activeTab = "van";
+if (location.hash === "#grid") viewMode = "grid";
+const tabHash = location.hash.match(/^#tab=(van|ai|log|trip)$/);
+if (tabHash) { viewMode = "tabs"; activeTab = tabHash[1]; }
+
+function applyView() {
+  const main = document.querySelector("main.grid");
+  main.classList.toggle("tabs", viewMode === "tabs");
+  main.dataset.tab = activeTab;
+  $("tabbar").classList.toggle("grid-mode", viewMode !== "tabs");
+  document.querySelectorAll("#tabbar [data-tab]").forEach(b => {
+    b.classList.toggle("on", viewMode === "tabs" && b.dataset.tab === activeTab);
+    b.setAttribute("aria-selected", String(viewMode === "tabs" && b.dataset.tab === activeTab));
+  });
+  $("view-toggle").textContent = viewMode === "tabs" ? "⊞ grid" : "▦ tabs";
+  placeGuardianLive();
+}
+
+function setTab(name) {
+  if (!TAB_NAMES.includes(name)) return;
+  activeTab = name;
+  if (viewMode !== "tabs") { viewMode = "tabs"; localStorage.setItem("vg-view", "tabs"); }
+  applyView();
+}
+
+document.querySelectorAll("#tabbar [data-tab]").forEach(b =>
+  b.addEventListener("click", () => setTab(b.dataset.tab)));
+$("view-toggle").addEventListener("click", () => {
+  viewMode = viewMode === "tabs" ? "grid" : "tabs";
+  localStorage.setItem("vg-view", viewMode);
+  applyView();
+});
+// Filming convenience: keys 1-4 switch tabs, G toggles the view — unless
+// you're typing in a field.
+document.addEventListener("keydown", ev => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return;
+  const k = ev.key;
+  if (k >= "1" && k <= "4") setTab(TAB_NAMES[Number(k) - 1]);
+  else if (k === "g" || k === "G") $("view-toggle").click();
+});
+
+function placeGuardianLive() {
+  const live = $("g-live"), overlay = $("g-overlay");
+  const eventOn = !$("g-card").classList.contains("hidden")
+    || !$("g-approve-row").classList.contains("hidden");
+  const away = viewMode === "tabs" && activeTab !== "ai";
+  if (eventOn && away) {
+    if (live.parentElement !== overlay) overlay.appendChild(live);
+    overlay.classList.remove("hidden");
+  } else {
+    const home = document.querySelector("#guardian");
+    if (live.parentElement !== home) home.insertBefore(live, $("g-body"));
+    overlay.classList.add("hidden");
+  }
+}
+
+$("g-overlay-open").addEventListener("click", () => setTab("ai"));
+$("g-overlay-why").addEventListener("click", () => {
+  setTab("ai");
+  if (!$("chat-send").disabled) sendChat("Why did you do that?");
+});
+
 /* ---- guardian --------------------------------------------------------------- */
 
 const G_STAGES = ["detected", "verified", "decided", "acted", "confirmed"];
@@ -632,6 +728,7 @@ async function refreshGuardian() {
   const hasCard = renderGuardianCard(g.card);
   document.querySelector(".guardian").classList.toggle("event", hasCard);
   body.classList.toggle("hidden", hasCard);
+  placeGuardianLive();   // surface the live block over any non-AI tab
 
   // The whole screen's demeanor (battery-saver take): red pulse under 20%
   // until Guardian acts, easing amber while the stages unwind, calm after.
@@ -727,6 +824,8 @@ function ensureWhyChip(show) {
   } else if (!show && chip) {
     chip.remove();
   }
+  // Mirror on the Guardian overlay: one tap jumps to the AI tab and asks.
+  $("g-overlay-why").classList.toggle("hidden", !show);
 }
 
 $("g-level-sel").addEventListener("change", async () => {
@@ -1200,39 +1299,39 @@ function line(x1, y1, x2, y2, stroke, w) {
 
 const STORY = [
   { caption: "This is VanGuard: a camper van's entire nervous system, watched by an AI that lives on this tablet. Look at the rail — the model, the NPU, and the promise: data stays on device.",
-    target: "header" },
+    target: "header", tab: "van" },
   { caption: "The heart: a 300Ah lithium battery, modeled to the coulomb. State of charge, voltage, current — and live runtime math underneath.",
-    target: ".hero" },
+    target: ".hero", tab: "van" },
   { caption: "Every watt has to reconcile: solar and alternator in, loads out, the battery absorbing the difference. These switches are live — this is a working model, not a picture.",
-    target: ".flow-tile" },
+    target: ".flow-tile", tab: "van" },
   { caption: "Comfort and connectivity in one place — including a roof-mounted Starlink whose power draw the battery model actually feels.",
-    target: ".tile:has(#cabin-temp)" },
+    target: ".climate-tile", tab: "van" },
   { caption: "Here telemetry becomes understanding. The verdict is deterministic rules; the words are the local model's. It patrols on a schedule and signs every report.",
-    target: ".insight-tile" },
+    target: ".insight-tile", tab: "ai" },
   { caption: "It doesn't just measure — it forecasts: battery at sunrise, energy to spare tonight, with every assumption disclosed.",
-    target: ".tile:has(#outlook-list)" },
+    target: ".outlook-tile", tab: "van" },
   { caption: "It reads the Mercedes side too — engine, fuel, live MPG — read-only, fused with the house data into one picture of the van.",
-    target: ".tile:has(#chassis-block)" },
+    target: ".chassis-tile", tab: "van" },
   { caption: "Ask it anything, typed or spoken — Whisper and a 4-billion-parameter model, both on this machine's own silicon.",
-    target: ".chat-tile",
+    target: ".chat-tile", tab: "ai",
     action: () => sendChat("What is charging the battery right now, and how is it doing?") },
   { caption: "\"Can I cook dinner?\" Battery math is never the AI's job — a calculation service renders the verdict; the model just speaks it. That's why it's never wrong.",
-    target: ".chat-tile",
+    target: ".chat-tile", tab: "ai",
     action: () => sendChat("Can I run the cooktop for 25 minutes?") },
   { caption: "Now let's go for a drive — except I've forgotten the switch that charges the house battery off the alternator. Mercedes sees a healthy engine; the house side gets nothing. And the rear A/C is running for the dogs.",
-    target: ".tile:has(#chassis-block)",
+    target: ".chassis-tile", tab: "van",
     action: () => postJson("/api/drive", { on: true }).then(() => { refreshTrip(); refreshAudit(); }) },
   { caption: "Twenty seconds in, the battery crosses twenty percent. One alert — and the whole screen turns red. There's no battery-saving mode on a van. Well. There is now.",
-    target: ".hero" },
-  { caption: "The Guardian — a deterministic policy engine, not the model — sheds my loads in my order: Starlink first, then the rear A/C. The fridge and freezer? Protected. Never touched. It would wake me before the food went warm.",
-    target: ".guardian" },
+    target: ".hero", tab: "van" },
+  { caption: "The Guardian — a deterministic policy engine, not the model — sheds my loads in my order: Starlink first, then the rear A/C. The fridge and freezer? Protected. Never touched. It would wake me before the food went warm. Watch it right here — no tab change needed.",
+    target: ".hero", tab: "van" },
   { caption: "And you can ask why. The answer comes from the logged evidence — never from imagination.",
-    target: ".chat-tile",
+    target: ".chat-tile", tab: "ai",
     action: () => sendChat("Why did you turn Starlink off?") },
   { caption: "Proof, not promises: every reading, every tool call, every action — audited. Zero external calls.",
-    target: ".diag-tile" },
+    target: ".diag-tile", tab: "log" },
   { caption: "Monitor. Understand. Protect. Even beyond the reach of the cloud.",
-    target: null,
+    target: null, tab: "van",
     action: () => postJson("/api/drive", { on: false })
       .then(() => postJson("/api/guardian/reset", {}))
       .then(() => { refreshTrip(); refreshGuardian(); refreshAudit(); }) },
@@ -1248,6 +1347,7 @@ function storyRender() {
   document.querySelector("main.grid").classList.toggle("story-dim", active);
   if (!active) return;
   const step = STORY[storyStep];
+  if (step.tab && viewMode === "tabs") setTab(step.tab);
   $("story-caption").textContent = PRESENTATION
     ? step.caption.replace(/^Simulating dinner/, "Dinner time")
     : step.caption;
@@ -1295,6 +1395,7 @@ async function tick() {
     $("stale-chip").textContent = "⚠ API UNREACHABLE";
   }
 }
+applyView();
 tick();
 refreshInsight();
 refreshSparks();

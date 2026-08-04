@@ -91,6 +91,33 @@ h1 { font-size: 18px; letter-spacing: 0.5px; }
 #alert-banner.warning  { background: var(--st-warn); color: #0b0b0b; }
 #alert-banner.critical { background: var(--st-critical); color: #fff; }
 
+/* ---- tab bar ------------------------------------------------------------------
+   Camera-friendly default: four big-target tabs. The classic one-screen grid
+   stays behind the ⊞ toggle (or #grid). */
+
+.tabbar {
+  display: flex; gap: 8px; align-items: center;
+  padding: 4px 22px 0;
+}
+.tabbar button {
+  background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--ring); border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  padding: 9px 22px; font-size: 15px; font-weight: 600;
+  min-height: 42px; cursor: pointer;              /* tablet-sized target */
+}
+.tabbar button.on {
+  background: var(--grid); color: var(--ink);
+  border-color: var(--baseline);
+}
+.tabbar button:hover { color: var(--ink); }
+.tabbar .view-toggle {
+  margin-left: auto; border-bottom: 1px solid var(--ring);
+  border-radius: 10px; font-weight: 400; font-size: 13px;
+  color: var(--muted); min-height: 34px; padding: 5px 14px;
+}
+.tabbar.grid-mode button:not(.view-toggle) { opacity: 0.45; }
+
 /* ---- grid ------------------------------------------------------------------- */
 
 main.grid {
@@ -117,6 +144,84 @@ main.grid {
 }
 .tile.wide { grid-column: span 2; }
 
+/* ---- tabbed layouts -------------------------------------------------------
+   One 12-column canvas; each tab shows a few big tiles. Everything global
+   (rail, alert banner, pulse border, Guardian overlay, footer) stays put. */
+
+main.grid.tabs {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: repeat(12, minmax(0, 1fr));
+}
+main.grid.tabs .tile { display: none; }
+main.grid.tabs[data-tab="van"]  .tile[data-tab="van"],
+main.grid.tabs[data-tab="ai"]   .tile[data-tab="ai"],
+main.grid.tabs[data-tab="log"]  .tile[data-tab="log"],
+main.grid.tabs[data-tab="trip"] .tile[data-tab="trip"] { display: flex; }
+
+/* Van: the whole filmed take plays here.
+   Left column: Battery over Climate, equal halves. Right column: Power
+   Flow is the hero at 3/4 height; Outlook + Chassis share one compact
+   full-width band beneath it. */
+main.grid.tabs[data-tab="van"] .tile.hero    { grid-column: 1 / span 4; grid-row: 1 / span 6; }
+main.grid.tabs[data-tab="van"] .climate-tile { grid-column: 1 / span 4; grid-row: 7 / span 6; }
+main.grid.tabs[data-tab="van"] .flow-tile    { grid-column: 5 / span 8; grid-row: 1 / span 9; }
+main.grid.tabs[data-tab="van"] .outlook-tile { grid-column: 5 / span 4; grid-row: 10 / span 3; }
+main.grid.tabs[data-tab="van"] .chassis-tile { grid-column: 9 / span 4; grid-row: 10 / span 3; }
+
+/* AI: the brain — insight + ask + Guardian home */
+main.grid.tabs[data-tab="ai"] .insight-tile { grid-column: span 5; grid-row: span 12; }
+main.grid.tabs[data-tab="ai"] .chat-tile    { grid-column: span 7; grid-row: span 12; }
+
+/* Log: the record */
+main.grid.tabs[data-tab="log"] .alerts-tile { grid-column: span 7; grid-row: span 12; }
+main.grid.tabs[data-tab="log"] .diag-tile   { grid-column: span 5; grid-row: span 12; }
+
+/* Trip: route + offline local knowledge */
+main.grid.tabs[data-tab="trip"] .trip-tile { grid-column: 3 / span 8; grid-row: span 12; }
+
+/* Roomier type on the big panes — this is the on-camera view */
+main.grid.tabs .tile.hero .big { font-size: 72px; }
+main.grid.tabs .big { font-size: 44px; }
+main.grid.tabs .tile.hero .spark { flex: 1; height: auto; min-height: 64px; }
+main.grid.tabs .spark { height: 48px; }
+
+/* Power Flow at presentation scale — this is the hero panel: the take's
+   watt story must read from across the van. Sizes leave headroom for the
+   7-node loads column + the sparkline even in a shorter window. */
+main.grid.tabs[data-tab="van"] .flow-tile .flow-node {
+  font-size: 18px; padding: 10px 16px; border-radius: 11px; gap: 12px;
+}
+main.grid.tabs[data-tab="van"] .flow-tile .flow-node b { font-size: 20px; }
+main.grid.tabs[data-tab="van"] .flow-tile .flow-col { gap: 9px; }
+main.grid.tabs[data-tab="van"] .flow-tile .flow-arrow { font-size: 36px; }
+main.grid.tabs[data-tab="van"] .flow-tile .flow-batt { min-width: 190px; padding: 16px 24px; }
+main.grid.tabs[data-tab="van"] .flow-tile .fb-net { font-size: 44px; }
+main.grid.tabs[data-tab="van"] .flow-tile .fb-label { font-size: 14px; }
+main.grid.tabs[data-tab="van"] .flow-tile .fb-runtime { font-size: 14px; }
+main.grid.tabs[data-tab="van"] .flow-tile .spark { height: 48px; margin-top: 8px; }
+/* The LIVE reconciliation line sits centered in the head, clear of the
+   loads column; the flow itself never rides up under the head. */
+main.grid.tabs[data-tab="van"] .flow-tile .tile-head .status {
+  margin: 0 auto; padding-left: 14px;
+}
+main.grid.tabs[data-tab="van"] .flow-tile .flow { min-height: 0; overflow: hidden; }
+
+/* Climate + Network: equal footing — Network claims the tile's lower half
+   instead of hugging the bottom edge. */
+main.grid.tabs[data-tab="van"] .climate-tile .net-sub {
+  flex: 1; margin-top: 12px; justify-content: space-evenly;
+}
+main.grid.tabs[data-tab="van"] .climate-tile .net-row { font-size: 14px; }
+main.grid.tabs[data-tab="van"] .climate-tile .net-bars { font-size: 17px; }
+
+/* Chassis pane in the Van band: center the block, readable from a distance */
+main.grid.tabs[data-tab="van"] .chassis-tile .chassis {
+  margin-top: auto; margin-bottom: auto;
+  border-top: none; font-size: 14px; gap: 5px;
+}
+main.grid.tabs[data-tab="van"] .chassis-tile .ch-title { font-size: 13px; }
+main.grid.tabs[data-tab="van"] .outlook-tile dl.outlook { font-size: 14px; margin-top: auto; margin-bottom: auto; }
+
 .tile.scrolly { overflow: hidden; }
 .table-wrap { flex: 1; min-height: 0; overflow-y: auto; }
 
@@ -133,6 +238,10 @@ main.grid {
   }
   .table-wrap { max-height: 300px; }
   .tile.wide { grid-column: span 1; }
+  /* narrow screens: active tab's tiles just stack */
+  main.grid.tabs[data-tab] .tile {
+    grid-column: auto !important; grid-row: auto !important;
+  }
 }
 
 .tile-head {
@@ -483,6 +592,43 @@ td.dev:hover { color: var(--ink); text-decoration: underline dotted; }
 .gc-protected { font-size: 12.5px; color: var(--st-good);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gc-protected b { letter-spacing: 0.5px; }
+
+/* ---- guardian overlay -------------------------------------------------------
+   While an episode is live and the AI tab isn't showing, #g-live (timeline +
+   card + approve row) reparents in here so the Guardian moment plays over
+   any tab. Slides up from the bottom, camera-sized. */
+
+.g-overlay {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: 34px; z-index: 990;
+  width: min(760px, 94vw);
+  background: var(--surface);
+  border: 1px solid var(--st-warn); border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  padding: 10px 16px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+  animation: g-overlay-in 300ms ease-out;
+}
+.g-overlay.hidden { display: none; }
+@keyframes g-overlay-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(14px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.g-overlay-head {
+  display: flex; align-items: center; gap: 10px;
+}
+.g-overlay-head .g-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--st-warn);
+}
+.g-overlay-head button {
+  background: none; border: 1px solid var(--ring); border-radius: 14px;
+  color: var(--ink-2); font-size: 12px; padding: 3px 12px; cursor: pointer;
+}
+.g-overlay-head #g-overlay-open { margin-left: auto; }
+.g-overlay-head #g-overlay-open:hover { color: var(--ink); }
+.g-overlay-head .why-chip {
+  border-color: var(--st-warn); color: var(--st-warn); font-weight: 600;
+}
 
 /* ---- screen demeanor (the filmed battery-saver take) -----------------------
    Under 20% with nothing done yet the whole app chrome pulses red; once

@@ -140,6 +140,15 @@ class VanModel:
 
     TANK_GAL = 24.5              # 2022 Sprinter 3500XD [verified-external]
     AVG_MPG = 16.0               # range basis, conservative
+    # E-bike charging (invented demo device, P12): Bosch-style 2A smart
+    # chargers in the garage — ~72W into the bike pack ≈ 90W at the 110V
+    # outlet [UNVERIFIED — plausible class figures; the "smart" telemetry
+    # (charge %, watts over BLE) mirrors what Bosch's app exposes; a real
+    # adapter would be a phase-2 BLE client like the Renogy BT-2 path]
+    EBIKE_AC_W = 90.0
+    EBIKE_FLOAT_AC_W = 6.0       # maintenance trickle once the pack is full
+    EBIKE_PACK_WH = 625.0        # PowerTube-class pack
+    EBIKE_START_PCT = 58.0
 
     def __init__(self, scenario, rng: random.Random, loads: LoadBank,
                  hvac=None, gps=None, take=None):
@@ -162,6 +171,8 @@ class VanModel:
         # outlet works without it (or shore bypass). Default off, like the
         # real thing between uses.
         self.inverter_on = scenario.shore_charger_a > 0
+        if take and take.inverter_on:
+            self.inverter_on = True     # 110V live for the filmed pan
         self.note = None      # one-shot message surfaced to the UI
         from sim.network import NetworkSim
         self.network = NetworkSim(scenario.seed)
@@ -190,6 +201,14 @@ class VanModel:
         # False = forgotten (the story shot). Chassis stays healthy either
         # way — that's the point.
         self.charge_switch_on = not (take and take.forgot_charge_switch)
+        # E-bike smart chargers (see EBIKE_* above). Latched present once
+        # ever plugged in so the device keeps reporting (charging: 0) when
+        # switched off instead of vanishing from the readings table.
+        self.ebike_present = False
+        self.ebike_pct = self.EBIKE_START_PCT
+        if take and take.ebikes_charging:
+            self.ebike_present = True
+            loads.appliances["ebikes"] = (self.EBIKE_AC_W, True)
         start_soc = take.start_soc if take else scenario.start_soc
         self.battery = Battery(start_soc)
         self.solar = SolarArray(rng, scenario.pv_peak_w, scenario.weather)
@@ -244,6 +263,17 @@ class VanModel:
         # The roof dish runs off the van's 12V — a real load. 5G is the
         # Surface's own modem; someone else's Wi-Fi costs nothing.
         self.load_w += self.network.starlink_power_w
+
+        # E-bike packs fill while their chargers have 110V; taper to a
+        # maintenance trickle at the top like the real smart charger would.
+        if "ebikes" in self.loads.appliances and ac_available:
+            ac_w = self.loads.appliances["ebikes"][0]
+            self.ebike_pct = min(100.0, self.ebike_pct + ac_w * 0.8
+                                 / self.EBIKE_PACK_WH * 100.0 * dt_s / 3600.0)
+            want = self.EBIKE_FLOAT_AC_W if self.ebike_pct >= 99.5 \
+                else self.EBIKE_AC_W
+            if ac_w != want:
+                self.loads.appliances["ebikes"] = (want, True)
 
         if self.gps is not None:
             self.gps.step(dt_s)
@@ -311,7 +341,10 @@ class VanModel:
             # Take stage-mark: the shot-list clock is relative to the Drive
             # press, so SOC holds at its mark until then — however long the
             # on-camera setup runs. Coulomb counting takes over at the press.
+            # The e-bike pack % holds at its mark too: every take must open
+            # with identical numbers on screen (B9 is shot as one sequence).
             self.battery.pin_for_take(self.take.start_soc)
+            self.ebike_pct = self.EBIKE_START_PCT
         self.batt_v = self.battery.terminal_v(self.charge_stage)
 
         if i_pv > 0 and i_charge > 0:
@@ -329,10 +362,13 @@ class VanModel:
         if cmd.get("target") == "appliance":
             # Known appliances only — an arbitrary-watts command would be an
             # invitation to fabricate loads.
-            known = {"cooktop": (1500.0, True), "microwave": (1000.0, True)}
+            known = {"cooktop": (1500.0, True), "microwave": (1000.0, True),
+                     "ebikes": (self.EBIKE_AC_W, True)}
             name = cmd.get("name")
             if name not in known:
                 return False
+            if name == "ebikes" and cmd.get("on"):
+                self.ebike_present = True
             if cmd.get("on"):
                 if not (self.inverter_on or self.shore_a_actual > 0):
                     # Dead outlets: the van is 12V-only until the inverter
@@ -376,7 +412,8 @@ class VanModel:
                 if self.take:
                     # Park fully resets the take: SOC back to its mark (and
                     # re-pinned), A/C off, dish back online and warm (no
-                    # 45s re-boot between takes), switch still forgotten.
+                    # 45s re-boot between takes), switch still forgotten,
+                    # inverter + e-bike chargers back to the opening state.
                     self.battery = Battery(self.take.start_soc)
                     self.charge_stage = "bulk"
                     self._absorb_i = None
@@ -385,6 +422,11 @@ class VanModel:
                     self.network.set_mode("starlink")
                     self.network.force_online()
                     self.charge_switch_on = not self.take.forgot_charge_switch
+                    if self.take.inverter_on:
+                        self.inverter_on = True
+                    if self.take.ebikes_charging:
+                        self.ebike_pct = self.EBIKE_START_PCT
+                        self.loads.appliances["ebikes"] = (self.EBIKE_AC_W, True)
             return True
         if cmd.get("target") == "load_switch":
             name = cmd.get("name")
@@ -539,6 +581,16 @@ class SimSource(TelemetrySource):
             add("inverter", "ac_out_w", ac_w, 0.5 if ac_w > 0 else 0.0, 1.0)
             add("inverter", "dc_in_w", dc_in, 0.5 if dc_in > 0 else 0.0, 1.0)
             add("inverter", "load_pct", ac_w / 3000.0 * 100.0, 0.0, 1.0)
+        # E-bike smart chargers (invented demo device — see EBIKE_* notes).
+        # Reported the way the bike's BLE service would: charging flag, wall
+        # watts, pack %. Present only once ever plugged in.
+        if m.ebike_present and "ebike" not in self._offline:
+            eb_on = ("ebikes" in m.loads.appliances
+                     and (m.inverter_on or m.shore_a_actual > 0))
+            eb_w = m.loads.appliances.get("ebikes", (0.0, True))[0] if eb_on else 0.0
+            add("ebike", "charging", 1.0 if eb_on else 0.0, 0.0, 1.0)
+            add("ebike", "power_w", eb_w, 0.6 if eb_w > 0 else 0.0, 1.0)
+            add("ebike", "battery_pct", m.ebike_pct, 0.0, 0.1)
         net = m.network
         add("network", "mode", net.mode, 0.0, 1.0)
         add("network", "signal_pct", net.signal_pct, 0.0, 1.0)

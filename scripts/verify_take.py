@@ -44,11 +44,13 @@ CHECKS: list[tuple[str, bool, str]] = []
 
 # The shot-list clock, seconds after the Drive press (±1s crossing, ±2s
 # stages: guardian pacing is wall-clock so eval-phase adds up to a second).
+# Three stages since the e-bike/inverter revision: Starlink → rear A/C →
+# the 110V circuit; only fridge + freezer survive.
 TARGETS = {
     "forgot_switch": {"crossing": (19.0, 21.0), "stage1": (26.0, 31.0),
-                      "stage2": (38.0, 44.0)},
+                      "stage2": (38.0, 44.0), "stage3": (50.0, 57.0)},
     "forgot_switch_fast": {"crossing": (11.0, 13.0), "stage1": (18.0, 23.0),
-                           "stage2": (30.0, 36.0)},
+                           "stage2": (30.0, 36.0), "stage3": (42.0, 49.0)},
 }
 
 
@@ -155,10 +157,10 @@ async def run_take(h: Harness, label: str, targets: dict,
     """One Drive press → full episode → measurements. Returns offsets."""
     press = h.clock.t
     await h.press_drive(True)
-    crossing = stage1 = stage2 = chip = calm = None
+    crossing = stage1 = stage2 = stage3 = chip = calm = None
     screens = []
     last = None
-    for _ in range(150):
+    for _ in range(170):
         st = await h.tick()
         off = h.clock.t - press
         soc = await h.soc()
@@ -177,6 +179,8 @@ async def run_take(h: Harness, label: str, targets: dict,
                 stage1 = e["ts"] - press
             if "rear A/C" in e["detail"] and stage2 is None:
                 stage2 = e["ts"] - press
+            if "110V" in e["detail"] and stage3 is None:
+                stage3 = e["ts"] - press
         card = st.get("card")
         if (chip is None and card and stage1 is not None
                 and card["stage"] in ("acted", "confirmed")
@@ -196,38 +200,57 @@ async def run_take(h: Harness, label: str, targets: dict,
     lo, hi = targets["stage2"]
     check(f"{label}: Stage 2 (rear A/C) acted on the clock",
           stage2 is not None and lo <= stage2 <= hi, f"+{stage2}s")
+    lo, hi = targets["stage3"]
+    check(f"{label}: Stage 3 (110V circuit) acted on the clock",
+          stage3 is not None and lo <= stage3 <= hi, f"+{stage3}s")
     check(f"{label}: why-chip held until the final stage",
-          chip is not None and stage2 is not None
-          and stage2 <= chip <= stage2 + 4,
-          f"chip +{chip}s vs stage2 +{stage2}s")
+          chip is not None and stage3 is not None
+          and stage3 <= chip <= stage3 + 4,
+          f"chip +{chip}s vs stage3 +{stage3}s")
 
-    # Screen demeanor: alarm strictly before Stage 1, easing between the
-    # stages, calm after recovery confirms; nothing before the crossing.
+    # Screen demeanor: alarm strictly before Stage 1, easing while the
+    # ladder unwinds, calm after the last recovery confirms; nothing
+    # before the crossing.
     pre = {s for o, s in screens if crossing and o < crossing}
     between = {s for o, s in screens
-               if stage1 and stage2 and stage1 + 1 < o < stage2}
+               if stage1 and stage3 and stage1 + 1 < o < stage3}
     check(f"{label}: screen quiet before the crossing", pre == {None},
           str(pre))
     check(f"{label}: alarm pulse between crossing and Stage 1",
           any(s == "alarm" for o, s in screens
               if crossing and stage1 and crossing <= o < stage1),
           )
-    check(f"{label}: easing between the stages",
+    check(f"{label}: easing while the ladder unwinds",
           between == {"easing"}, str(between))
     check(f"{label}: calm after recovery", calm is not None,
           f"+{calm}s")
 
     card = (last or {}).get("card") or {}
-    check(f"{label}: card shows STAGE 2 + PROTECTED fridge/freezer",
-          card.get("stage_no") == 2
+    check(f"{label}: card shows STAGE 3 + PROTECTED fridge/freezer",
+          card.get("stage_no") == 3
           and card.get("protected") == ["fridge", "freezer"],
           f"stage_no={card.get('stage_no')} protected={card.get('protected')}")
     check(f"{label}: decision receipt still says 0 external calls",
           (card.get("receipt") or {}).get("external") == "0 external calls")
 
-    if None in (crossing, stage1, stage2):
+    # The closing frame: everything nonessential dark, cold chain alive.
+    rd = await h.readings()
+    inv = rd.get("inverter", {}).get("state", (0, None))[1]
+    ebk = rd.get("ebike", {}).get("charging", (0, None))[1]
+    fon = rd.get("switches", {}).get("fridge_on", (0, None))[1]
+    zon = rd.get("switches", {}).get("freezer_on", (0, None))[1]
+    from poller import derived
+    net = derived.net_power_w(rd)
+    check(f"{label}: after Stage 3 — inverter off, e-bikes off, fridge + "
+          "freezer untouched, battery recovering",
+          inv == 0.0 and ebk == 0.0 and fon == 1.0 and zon == 1.0
+          and net is not None and net > 0,
+          f"inv={inv} ebike={ebk} fridge={fon} freezer={zon} net={net}")
+
+    if None in (crossing, stage1, stage2, stage3):
         return None
-    return {"crossing": crossing, "stage1": stage1, "stage2": stage2}
+    return {"crossing": crossing, "stage1": stage1, "stage2": stage2,
+            "stage3": stage3}
 
 
 async def park_and_check(h: Harness, label: str, start_soc: float) -> None:
@@ -239,11 +262,15 @@ async def park_and_check(h: Harness, label: str, start_soc: float) -> None:
     soc = await h.soc()
     hvac = rd.get("hvac", {}).get("mode", (0, None))[1]
     net = rd.get("network", {}).get("mode", (0, None))[1]
+    inv = rd.get("inverter", {}).get("state", (0, None))[1]
+    ebk = rd.get("ebike", {}).get("charging", (0, None))[1]
     check(f"{label}: Park resets SOC to its mark",
           soc is not None and abs(soc - start_soc) <= 0.06,
           f"{soc} vs {start_soc}")
     check(f"{label}: Park resets A/C off + dish back online",
           hvac == 0.0 and net == 3.0, f"hvac={hvac} net={net}")
+    check(f"{label}: Park restores 110V — inverter on, e-bikes charging",
+          inv in (1.0, 2.0) and ebk == 1.0, f"inv={inv} ebike={ebk}")
     check(f"{label}: Park clears the episode and the pulse",
           st.get("active") is None and st.get("screen") is None)
 
@@ -271,6 +298,14 @@ async def main() -> int:
     dish = (await h.readings()).get("starlink", {}).get("power_w", (0, 0))[1]
     check("pre-drive: dish online and steady (~24W, not booting)",
           dish is not None and 15.0 <= dish <= 32.0, f"{dish}W")
+    rd0 = await h.readings()
+    inv0 = rd0.get("inverter", {}).get("state", (0, None))[1]
+    ebw = rd0.get("ebike", {}).get("power_w", (0, None))[1]
+    ebp = rd0.get("ebike", {}).get("battery_pct", (0, None))[1]
+    check("pre-drive: 110V live — inverter inverting, e-bikes charging ~90W",
+          inv0 == 2.0 and ebw is not None and 80.0 <= ebw <= 100.0
+          and ebp is not None and 50.0 <= ebp <= 70.0,
+          f"inv={inv0} ebike={ebw}W pack={ebp}%")
 
     print("== forgot_switch: take 1 ==")
     t1 = await run_take(h, "take1", TARGETS[take], start_soc)

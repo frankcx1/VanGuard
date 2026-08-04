@@ -70,14 +70,19 @@ class Take:
     hold_soc_parked: bool = True        # SOC pinned until the Drive press so
                                         # the crossing clock starts at the
                                         # press, not at app launch
+    inverter_on: bool = True            # 110V wall power live for the pan —
+    ebikes_charging: bool = True        # — feeding the e-bike smart chargers
+                                        # in the garage (never shed; the
+                                        # Guardian's ladder stays two-stage)
 
 
 # start_soc values are tuned by scripts/verify_take.py so the first emitted
 # SOC <= 20.0% lands at the shot-list offset from the Drive press
-# (forgot_switch: +20s; forgot_switch_fast: +12s), at ~820W net drain.
+# (forgot_switch: +20s; forgot_switch_fast: +12s), at ~940W net drain
+# (rear A/C + Starlink + inverter/e-bike chargers, minus morning solar).
 TAKES: dict[str, Take] = {
-    "forgot_switch": Take("forgot_switch", start_soc=20.158),
-    "forgot_switch_fast": Take("forgot_switch_fast", start_soc=20.114),
+    "forgot_switch": Take("forgot_switch", start_soc=20.176),
+    "forgot_switch_fast": Take("forgot_switch_fast", start_soc=20.128),
 }
 
 

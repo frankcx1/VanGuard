@@ -37,8 +37,17 @@
 
 <div id="alert-banner" class="hidden" role="alert"></div>
 
-<main class="grid">
-  <section class="tile hero">
+<nav id="tabbar" class="tabbar" role="tablist" aria-label="Dashboard sections">
+  <button data-tab="van" role="tab" class="on">🚐 Van</button>
+  <button data-tab="ai" role="tab">✨ AI</button>
+  <button data-tab="log" role="tab">📋 Log</button>
+  <button data-tab="trip" role="tab">🗺️ Trip</button>
+  <button id="view-toggle" class="view-toggle"
+    title="Switch between the tabbed view and the classic one-screen grid">⊞ grid</button>
+</nav>
+
+<main class="grid tabs" data-tab="van">
+  <section class="tile hero" data-tab="van">
     <div class="tile-head"><h2>Battery</h2><span id="soc-status" class="status"></span></div>
     <div class="big"><span id="soc">–</span><span class="unit">%</span></div>
     <div class="row sub2">
@@ -48,7 +57,7 @@
     <div class="spark" data-spark="soc"></div>
   </section>
 
-  <section class="tile wide flow-tile">
+  <section class="tile wide flow-tile" data-tab="van">
     <div class="tile-head"><h2>Power flow</h2>
       <span class="status plain"><span id="flow-live" class="live-ts"></span> <span id="flow-recon"></span></span>
     </div>
@@ -72,12 +81,14 @@
         <button class="flow-node src" id="fridge-btn" aria-pressed="false">🧊 Fridge<b id="f-fridge">–</b></button>
         <button class="flow-node src" id="freezer-btn" aria-pressed="false">❄️ Freezer<b id="f-freezer">–</b></button>
         <button class="flow-node src" id="acu-btn" aria-pressed="false">🌬️ A/C<b id="f-acu">off</b></button>
+        <button class="flow-node src hidden" id="ebike-btn" aria-pressed="false"
+          title="E-bike smart chargers in the garage (110V via the inverter) — pack telemetry the way the bike's BLE service reports it. Sim; a real adapter is a phase-2 BLE client.">🚲 E-bikes<b id="f-ebike">–</b></button>
       </div>
     </div>
     <div class="spark" data-spark="net"></div>
   </section>
 
-  <section class="tile">
+  <section class="tile climate-tile" data-tab="van">
     <div class="tile-head"><h2>Climate</h2><span id="hvac-state" class="status plain"></span></div>
     <div class="big"><span id="cabin-temp">–</span><span class="unit">°F inside</span></div>
     <div class="hvac-controls">
@@ -105,7 +116,7 @@
     </div>
   </section>
 
-  <section class="tile wide insight-tile">
+  <section class="tile wide insight-tile" data-tab="ai">
     <div class="tile-head"><h2>VanGuard Insight</h2>
       <span class="status plain" id="insight-prov">deterministic rules</span>
     </div>
@@ -128,22 +139,19 @@
     </div>
   </section>
 
-  <section class="tile">
+  <section class="tile outlook-tile" data-tab="van">
     <div class="tile-head"><h2>Power outlook</h2><span id="ol-conf" class="status plain"></span></div>
     <dl class="outlook" id="outlook-list"></dl>
     <details class="assumptions"><summary>assumptions</summary><div id="ol-assumptions"></div></details>
   </section>
 
-  <section class="tile">
-    <div class="tile-head"><h2>Trip</h2>
+  <section class="tile chassis-tile" data-tab="van">
+    <div class="tile-head"><h2>Chassis</h2>
       <span class="trip-head-right">
         <span id="trip-state" class="status plain"></span>
         <button id="drive-btn" aria-pressed="false" title="Start/stop a simulated drive from the current position">▶ Drive</button>
       </span>
     </div>
-    <div class="big"><span id="trip-mi">–</span><span class="unit">mi today</span></div>
-    <div class="row sub2"><span id="trip-pos">–</span></div>
-    <ul id="poi-list"></ul>
     <div class="chassis" id="chassis-block">
       <span class="ch-title">CHASSIS · read-only</span>
       <span id="chassis-line1">–</span>
@@ -152,7 +160,14 @@
     </div>
   </section>
 
-  <section class="tile wide chat-tile">
+  <section class="tile trip-tile" data-tab="trip">
+    <div class="tile-head"><h2>Trip</h2><span class="status plain">offline POI data · nothing leaves the device</span></div>
+    <div class="big"><span id="trip-mi">–</span><span class="unit">mi today</span></div>
+    <div class="row sub2"><span id="trip-pos">–</span></div>
+    <ul id="poi-list"></ul>
+  </section>
+
+  <section class="tile wide chat-tile" data-tab="ai">
     <div class="tile-head"><h2>Ask VanGuard</h2><span id="chat-meta" class="status plain"></span></div>
     <div class="chips-row" id="chat-chips">
       <button data-q="Can I run the cooktop for 25 minutes?">cooktop 25 min?</button>
@@ -182,13 +197,18 @@
           </select>
         </label>
       </div>
-      <div id="g-timeline" class="g-timeline hidden" aria-hidden="true"></div>
-      <div id="g-card" class="g-card hidden"></div>
-      <div id="g-body" class="g-body">warming up…</div>
-      <div id="g-approve-row" class="g-approve hidden">
-        <button id="g-approve">Approve</button>
-        <button id="g-dismiss">Dismiss</button>
+      <!-- g-live travels: while an episode is live and another tab is
+           active, this whole block reparents into #g-overlay so the
+           Guardian moment is never hidden behind a tab. -->
+      <div id="g-live">
+        <div id="g-timeline" class="g-timeline hidden" aria-hidden="true"></div>
+        <div id="g-card" class="g-card hidden"></div>
+        <div id="g-approve-row" class="g-approve hidden">
+          <button id="g-approve">Approve</button>
+          <button id="g-dismiss">Dismiss</button>
+        </div>
       </div>
+      <div id="g-body" class="g-body">warming up…</div>
       <details class="g-policy-details" id="g-policy-details">
         <summary id="g-policy-summary">policy details</summary>
         <div class="g-policy" id="g-policy"></div>
@@ -196,18 +216,27 @@
     </div>
   </section>
 
-  <section class="tile scrolly">
+  <section class="tile scrolly alerts-tile" data-tab="log">
     <div class="tile-head"><h2>Alerts</h2><span id="alert-count" class="status plain"></span></div>
     <ul id="alert-list"></ul>
   </section>
 
-  <section class="tile diag-tile">
+  <section class="tile diag-tile" data-tab="log">
     <div class="tile-head"><h2>Diagnostics</h2></div>
     <p id="diag-summary" class="diag-summary">–</p>
     <p class="row sub2"><span id="diag-runtime">–</span></p>
     <button id="diag-open">Open diagnostics</button>
   </section>
 </main>
+
+<div id="g-overlay" class="g-overlay hidden" role="status" aria-label="Guardian event">
+  <div class="g-overlay-head">
+    <span class="g-title">🛡 GUARDIAN</span>
+    <button id="g-overlay-why" class="why-chip hidden">why did you do that?</button>
+    <button id="g-overlay-open" title="Open the AI tab (Guardian home + Ask)">open AI tab →</button>
+  </div>
+  <!-- #g-live reparents here during an episode -->
+</div>
 
 <footer><span id="src-line">–</span></footer>
 

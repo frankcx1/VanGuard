@@ -21,29 +21,33 @@ cd C:\vibe\vangaurd
 ## The take: `forgot_switch` (Cut A 1:16–2:23 / all of Cut B's demo)
 
 Pre-drive state, however long the setup runs: battery held at its ~20.2%
-mark, Starlink online and steady (~24W), rear A/C off, solar producing.
-The story: the alternator→house charge switch was never flipped (B7 is the
-physical insert shot) — so the moment we drive, the house battery drains
-while Mercedes sees a perfectly healthy engine.
+mark, Starlink online and steady (~24W), **inverter on and inverting —
+110V live, e-bike smart chargers pulling ~90W with the pack held at 58%**,
+rear A/C off, solar producing. The story: the alternator→house charge
+switch was never flipped (B7 is the physical insert shot) — so the moment
+we drive, the house battery drains while Mercedes sees a perfectly
+healthy engine.
 
 **Event clock, relative to the ▶ Drive press** (verified by
 `scripts\verify_take.py`; consecutive takes reproduce within ~1s):
 
 | Clock | What the screen does |
 |---|---|
-| 0:00 | ▶ Drive: engine on, rear A/C on (~900W, for the Doodles), house charge input **0W**, chassis healthy at 14.1V |
+| 0:00 | ▶ Drive: engine on, rear A/C on (~900W, for the Doodles), Starlink + inverter + e-bike chargers already on, house charge input **0W**, chassis healthy at 14.1V |
 | ~+20s | SOC crosses **20.0%** — one warning alert, whole app chrome starts the **red pulse** |
 | ~+27s | Guardian **STAGE 1**: DETECTED → VERIFIED → ACTED: *Shed Starlink dish* (~24W); pulse eases to a slow amber breath |
 | ~+39s | Guardian **STAGE 2**: *Shed rear A/C* (~900W) — the battery-saver exception, executed autonomously below 20% |
-| ~+40s | Amber **why did you do that?** chip appears (held until the final stage, on purpose) |
-| ~+47s | RECOVERY CONFIRMED: net watts before → after, forecast improves, border calm — **one calm card**, PROTECTED: fridge · freezer visible throughout |
+| ~+52s | Guardian **STAGE 3**: *Shed the 110V circuit* — inverter off, which takes the e-bike chargers with it (~120W). Everything nonessential is now dark |
+| ~+53s | Amber **why did you do that?** chip appears (held until the final stage, on purpose) |
+| ~+60s | RECOVERY CONFIRMED: battery net goes **positive**, forecast improves, border calm — **one calm card**, PROTECTED: fridge · freezer green and untouched the whole way |
 
-`forgot_switch_fast`: crossing ~+12s, Stage 1 ~+19s, Stage 2 ~+31s.
+`forgot_switch_fast`: crossing ~+12s, stages ~+19s / ~+31s / ~+43s.
 
 **⏸ Park fully resets the take:** SOC back to its mark (re-pinned), A/C
-off, dish back online *and warm* (no 45s re-boot between takes), Guardian
-episodes/cooldowns wiped, autonomy re-armed to **Protect**, van home, trip
-zeroed. Shoot as many takes as needed — the timing is identical.
+off, dish back online *and warm* (no 45s re-boot between takes), inverter
+back on with the e-bike pack re-pinned at 58%, Guardian episodes/cooldowns
+wiped, autonomy re-armed to **Protect**, van home, trip zeroed. Shoot as
+many takes as needed — the timing is identical.
 
 **The voice beat (2:23–2:39):** after Stage 2, tap the chip — or tap 🎤 and
 ask *"why did you do that?"* out loud. The answer reads back from the
@@ -63,6 +67,24 @@ launch), dish pre-warmed, A/C-on as a Drive side effect, alert thresholds
 tuned so the crossing is the single warning, and a narrowed Guardian
 detector set so nothing talks over the battery-saver story. BUILD_LOG has
 the details.
+
+## The tabbed view (default — the camera-friendly layout)
+
+Four tabs, big tiles: **🚐 Van** (Battery hero, Power Flow, Climate/Network,
+Chassis + Drive, Outlook — the whole take plays here) · **✨ AI** (Insight,
+Ask + Guardian home) · **📋 Log** (Alerts, Diagnostics) · **🗺️ Trip**
+(route + offline POIs). Keys **1–4** switch tabs, **G** toggles the classic
+one-screen grid (also `#grid` in the URL; the toggle is remembered).
+
+While a Guardian episode is live and you're not on the AI tab, the live
+block — timeline, STAGE card, approve row — **slides up as an overlay over
+whatever tab is showing**, so the Guardian moment can't hide behind a tab.
+The amber *why did you do that?* chip appears right on the overlay after
+the final stage: one tap jumps to the AI tab and asks. "open AI tab →"
+does the same without asking.
+
+On-camera flow for the take: everything through Stage 2 plays on **Van**
+(the overlay included); the voice beat is one deliberate cut to **AI**.
 
 ## Story mode (guided, presenter-paced) — Option A
 

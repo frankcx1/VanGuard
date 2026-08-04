@@ -68,6 +68,15 @@ ACTIONS = {
         "command": {"target": "hvac", "mode": "off"},
         "cooldown_s": 600,
     },
+    "shed_110v": {
+        "label": "Shed the 110V circuit (inverter + e-bike chargers)",
+        "permission": "confirm",           # cutting live outlets always asks —
+        # same battery-saver exception as hvac_off: the final ladder rung
+        # before the protected loads. The sim's inverter-off handler drops
+        # every AC appliance with it, exactly like the real switch would.
+        "command": {"target": "inverter", "on": False},
+        "cooldown_s": 600,
+    },
     "set_mode_camp": {
         "label": "Switch operating mode to Camp",
         "permission": "auto",              # app policy, not hardware
@@ -135,6 +144,8 @@ class Guardian:
                     and (_get(readings, "inverter", "ac_out_w") or 0) < 5)
         if action_id == "hvac_off":
             return (_get(readings, "hvac", "mode") or 0) != 0.0
+        if action_id == "shed_110v":
+            return (_get(readings, "inverter", "state") or 0) in (1.0, 2.0)
         return True
 
     def _savings_w(self, action_id, readings) -> float:
@@ -144,6 +155,9 @@ class Guardian:
             return 18.0
         if action_id == "hvac_off":
             return _get(readings, "hvac", "hvac_power_w") or 0.0
+        if action_id == "shed_110v":
+            # dc_in_w already counts idle draw + the outlets' DC cost.
+            return _get(readings, "inverter", "dc_in_w") or 18.0
         return 0.0
 
     async def _execute(self, action_id) -> None:
@@ -161,13 +175,17 @@ class Guardian:
 
     def _saver_ladder(self, readings) -> list[str]:
         """Nonessential loads still sheddable, in the owner's priority
-        order: Starlink first, comfort second. Fridge and freezer are not
-        candidates by construction (PROTECTED_LOADS)."""
+        order: Starlink, then comfort, then the whole 110V circuit
+        (inverter + whatever it feeds — e-bike chargers included). Below
+        20% EVERYTHING nonessential goes, one stage at a time; fridge and
+        freezer are not candidates by construction (PROTECTED_LOADS)."""
         ladder = []
         if _get(readings, "network", "mode") == 3.0:
             ladder.append("suspend_starlink")
         if (_get(readings, "hvac", "mode") or 0) != 0.0:
             ladder.append("hvac_off")
+        if (_get(readings, "inverter", "state") or 0) in (1.0, 2.0):
+            ladder.append("shed_110v")
         return ladder
 
     def detect_battery_saver(self, readings) -> dict | None:
@@ -203,9 +221,12 @@ class Guardian:
                          "never shed, wakes a human before food goes warm"),
             "actions": ladder[:1],          # one stage at a time
             "proposals": [],
-            "auto_override": ("hvac_off",),  # the battery-saver exception
+            # The battery-saver exception: confirm-class comfort/circuit
+            # actions execute autonomously below 20%.
+            "auto_override": ("hvac_off", "shed_110v"),
             "labels": {"suspend_starlink": "Shed Starlink dish",
-                       "hvac_off": "Shed rear A/C"},
+                       "hvac_off": "Shed rear A/C",
+                       "shed_110v": "Shed 110V — inverter + e-bike chargers"},
             "stage_no": stage_no,
             "protected": list(PROTECTED_LOADS),
             "metrics": {"soc_pct": soc, "net_w": net},
@@ -421,13 +442,16 @@ class Guardian:
             if self.pending[rid] < needed:
                 continue
             if self.active and self.active["risk_id"] == rid:
-                # Battery-saver escalates within one story: when a completed
-                # stage didn't stop the drain, the next stage fires 12s after
-                # the last action (+28s Starlink → +40s rear A/C).
+                # Battery-saver escalates within one story: below 20% the
+                # ladder runs to its end — every nonessential load goes,
+                # one verified stage at a time, 12s apart (+28s Starlink →
+                # +40s rear A/C → +52s the 110V circuit). Only the
+                # protected loads survive. Deterministic by design: the
+                # stop condition is "nothing nonessential left", not a
+                # noise-sensitive watt threshold.
                 if (rid == "battery-saver"
                         and self.active.get("stage") == "confirmed"
                         and risk["actions"]
-                        and (derived.net_power_w(readings) or 0) < -50.0
                         and now - self.active.get("acted_ts", 0) >= 12):
                     pass    # fall through: run the next stage's episode
                 else:
@@ -628,8 +652,7 @@ class Guardian:
         done, so the chip lands after the final shed, not the first."""
         if not self.active or self.active.get("risk_id") != "battery-saver":
             return False
-        return (bool(self._saver_ladder(readings))
-                and (derived.net_power_w(readings) or 0) < -50.0)
+        return bool(self._saver_ladder(readings))
 
     def _screen(self, readings) -> str | None:
         """One word for the whole dashboard's demeanor (the filmed border

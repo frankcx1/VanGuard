@@ -683,3 +683,107 @@ PROTECTED card, 0-external receipt, Park reset (SOC/A-C/dish/pulse), and
 the filming flow itself — a second take pressed at an odd phase after a
 Park reproduces crossing/Stage 1/Stage 2 **within 1s**. Full regression
 green: p1 20/20, p2 13/13, p4, p5, p6, p8 25/25, p9 35/35.
+
+---
+
+## 2026-08-03 — P12: Tabbed view — the camera-friendly layout
+
+Frank's call after reviewing the take: the one-screen grid is "an eyeful"
+on video. Rebuilt the presentation as four tabs with the proven grid one
+tap away (nothing was removed — same tiles, same IDs, same JS data flow).
+
+- **Tabs**: 🚐 Van (Battery hero spanning two rows with a full-height
+  sparkline, Power Flow wide, Climate/Network, Chassis + Drive, Outlook —
+  the entire filmed take plays here) · ✨ AI (Insight, Ask + Guardian
+  home) · 📋 Log (Alerts, Diagnostics) · 🗺️ Trip (route + offline POIs).
+  Keys 1–4 switch tabs, G toggles the view; `#tab=<name>` and `#grid`
+  deep-link; the toggle persists in localStorage. Tile-to-tab mapping is
+  a `data-tab` attribute; per-tab layouts are one 12-column CSS grid.
+- **The structural piece — Guardian never hides behind a tab**: the live
+  block (`#g-live`: timeline + STAGE card + approve row) **reparents into
+  a fixed overlay** whenever an episode is live and the AI tab isn't
+  showing; back home when it is. The why-chip mirrors onto the overlay —
+  one tap jumps to the AI tab and asks. This preserves the shot-list
+  choreography: everything through Stage 2 on the Van tab, one deliberate
+  cut to AI for the voice beat.
+- **Split the old Trip tile**: Chassis (+ Drive/Park button) now a Van-tab
+  tile; Trip keeps odometer/position/POIs on its own tab. IDs unchanged —
+  refreshTrip needed zero changes.
+- Story mode steps carry a `tab:` field and auto-switch before
+  spotlighting; the Guardian step now stays on Van and lets the overlay
+  carry the moment.
+- Grid mode verified untouched (screenshot) — it simply gained the split
+  chassis tile.
+
+Verified live on the real stack (headless-Edge frames at 1920×1080): all
+four tabs + grid render; a full take on the Van tab shows the red-pulse
+border + single "battery low: 20.0%" banner at the crossing, the overlay
+sliding up with STAGE 1 (Shed Starlink dish · 25W) then STAGE 2 (Shed
+rear A/C · 900W) + PROTECTED line + receipt, the why-chip on the overlay,
+and the rail flipping to NO UPLINK · LOCAL AI ACTIVE after the dish shed.
+One non-regression note: the launcher's model pre-warm hit a transient
+500 (startup race with the watchdog's first patrol loading the engine);
+the next request served fine and the rail reported GPU correctly — the
+pre-warm's warn-and-continue handling is doing its job.
+
+**Van-tab rev 2 (same day, Frank's screenshot review):** Battery had too
+much real estate. New arrangement — left column Battery over Climate in
+equal halves; right column Power Flow at 4/6 height with
+presentation-scale type (17px nodes, 19px watt values, 40px battery-box
+net number, 34px arrows), and Outlook + Chassis sharing one full-width
+band beneath it (Chassis block centered, 14px). Implemented as a 6-row
+grid template so left and right columns split independently.
+
+**Van-tab rev 3 (same day, second screenshot pass):** Power Flow promoted
+to the hero panel outright — 9/12 of the height (grid moved to a 12-row
+template), type up another step (19px nodes / 22px values / 48px net /
+40px arrows); Outlook + Chassis compressed to a 3/12 band (they had more
+room than content). Climate and Network now split their tile evenly: the
+network block claims the lower half (`flex: 1`, content spread
+space-evenly) instead of bottom-hugging under dead space, stats text up
+to 14px.
+
+---
+
+## 2026-08-03 — P12b: E-bike chargers + the three-stage shed
+
+Two findings and a feature, same session. First the verified answer to
+Frank's question: **the van's A/C does NOT need the inverter** — it's a
+Cruise N Comfort **HD12L VDC**, native 12V (OGA invoice line 20), on its
+own heavy-duty DC breaker. The sim already modelled exactly that.
+
+The feature (Frank's spec): the take should still open with the inverter
+ON and real 110V work happening — and the Guardian should shed
+**everything** except the cold chain. Invented demo device: **e-bike
+smart chargers** in the garage — Bosch-style 2A ≈ 90W at the outlet
+[UNVERIFIED — plausible class figures; explicitly an invented device],
+reporting pack %, watts, and charging state the way the bike's BLE
+service would (real adapter = phase-2 BLE client, same shape as the
+BT-2 path). New `ebike` telemetry source, 🚲 E-bikes node in Power Flow
+(on/off via the audited appliance command; auto-switches the inverter on
+like the cooktop), pack % pinned at 58 while parked so every take opens
+identical, tapers to a 6W float at full.
+
+**The battery-saver ladder is now three stages** — Starlink (~24W) →
+rear A/C (~900W) → the 110V circuit (inverter off, which drops the
+e-bike chargers with it, ~120W): below 20% the ladder runs to its END,
+one verified stage every ~12s, stop condition "nothing nonessential
+left" rather than a noise-sensitive watt threshold (deterministic by
+design — the old net<-50W escalation gate would have made Stage 3 timing
+depend on fridge compressor phase). Only fridge + freezer survive, and
+the closing frame shows battery net positive with everything else dark.
+New action `shed_110v` (confirm-class, battery-saver auto-override, like
+hvac_off). Shot-list clock: crossing +20s, stages +28s/+40s/+52s, chip
+~+53s, calm ~+60s; fast variant +12/+19/+31/+43.
+
+Layout fixes from live testing on Frank's window: the LIVE reconciliation
+line centers in the Power Flow head (it was colliding with the House DC
+node), hero-scale sizes trimmed one step so the 7-node loads column +
+sparkline fit shorter windows (verified at 1600×860 and 1920×1080).
+
+Verification: verify_take extended to **53/53** — three-stage clock both
+takes, chip after Stage 3, closing frame (inverter off, e-bikes off,
+fridge/freezer on, net positive), Park restoring 110V + pack mark, ±0s
+take-to-take drift. Full regression green (p1/p2/p4/p5/p6/p8/p9).
+NOTE: the shot-list docx (Technical Notes + the 2:01–2:23 beats) still
+describes the two-stage version — flagged to Frank for a rev.
