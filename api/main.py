@@ -45,6 +45,10 @@ class HvacCommand(BaseModel):
     setpoint_c: float | None = Field(default=None, ge=10, le=32)
 
 
+class CloudSearchQuery(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
 class SensorCommand(BaseModel):
     source: Literal["shunt", "dcc50s", "hvac", "gps", "inverter", "chassis"]
     offline: bool
@@ -551,9 +555,6 @@ def create_app(cfg: dict | None = None) -> FastAPI:
     async def cloud_status():
         return stamp({"configured": bool(os.environ.get("ANTHROPIC_API_KEY"))})
 
-    class CloudSearchQuery(BaseModel):
-        question: str = Field(min_length=3, max_length=500)
-
     @app.post("/api/cloud/search")
     async def cloud_search(body: CloudSearchQuery):
         if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -579,13 +580,16 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             f"rather than guessing.\n\nQuestion: {body.question}")
 
         def _ask():
-            client = anthropic.Anthropic(timeout=90.0)
+            client = anthropic.Anthropic(timeout=180.0)
             msgs = [{"role": "user", "content": prompt}]
             resp = None
             for _ in range(3):
                 resp = client.beta.messages.create(
                     model="claude-opus-5",
-                    max_tokens=1500,
+                    # Opus 5 thinks by default and max_tokens caps thinking +
+                    # searches + answer together — a tight cap starves the
+                    # visible answer.
+                    max_tokens=8000,
                     output_config={"effort": "medium"},
                     # Opus 5's safety classifiers can decline a request;
                     # "default" re-serves it on the recommended fallback

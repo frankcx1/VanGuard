@@ -888,3 +888,16 @@ Verified: headless-Edge frames of all four tabs at 1920×1080 (Van
 untouched — take state, e-bike node, hero sizes all as filmed);
 cloud/status + trip?limit=24 live; **verify_take 53/53** and
 **verify_p5 50/50** green, so the shot-list clock is unaffected.
+
+**Cloud expert live (same day):** Frank added ANTHROPIC_API_KEY (user env
+var; launcher relaunched with the value pulled from the registry since
+running shells predate the edit). Two fixes shaken out by the first real
+calls: (1) `CloudSearchQuery` was defined inside the route function — with
+`from __future__ import annotations` FastAPI resolves hints in module
+scope, so the body was treated as a query param and every POST 422'd;
+moved to module level. (2) `max_tokens=1500` starved the answer — Opus 5
+thinks by default and the cap covers thinking + web searches + answer
+together, so the visible text never arrived; raised to 8000 (+ client
+timeout 180s). Verified live: "closest diesel" answered in ~65s by
+claude-opus-5 with real Kirkland stations, big-van access notes, and
+verified/unverified flags; both calls audited as device=CLOUD.
