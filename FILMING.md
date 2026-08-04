@@ -18,7 +18,7 @@ cd C:\vibe\vangaurd
 - `-Kiosk` — fullscreen Edge, zero chrome (**Alt+F4** exits)
 - Stop everything: `.\scripts\demo.ps1 -Stop`
 
-## The take: `forgot_switch` (Cut A 1:16–2:23 / all of Cut B's demo)
+## The take: `forgot_switch` (Cut A 1:16–2:33 / all of Cut B's demo)
 
 Pre-drive state, however long the setup runs: battery held at its ~20.2%
 mark, Starlink online and steady (~24W), **inverter on and inverting —
@@ -49,7 +49,7 @@ back on with the e-bike pack re-pinned at 58%, Guardian episodes/cooldowns
 wiped, autonomy re-armed to **Protect**, van home, trip zeroed. Shoot as
 many takes as needed — the timing is identical.
 
-**The voice beat (2:23–2:39):** after Stage 2, tap the chip — or tap 🎤 and
+**The voice beat (2:33–2:49):** after Stage 3, tap the chip — or tap 🎤 and
 ask *"why did you do that?"* out loud. The answer reads back from the
 Guardian log over authentic NPU time (~10s; the long cut holds the wait).
 Footer receipt: local pipeline, N tool calls, **0 external calls**.
@@ -90,7 +90,7 @@ On-camera flow for the take: everything through Stage 2 plays on **Van**
 
 Click **🎬 Story** in the rail (or `http://127.0.0.1:8000/#story`). 15
 steps; with the take armed, steps 10–12 play the forgot-switch beats
-(press Drive → wait ~20s for the crossing → watch the two-stage shed).
+(press Drive → wait ~20s for the crossing → watch the three-stage shed).
 Narrate over the waits; the app's clock is deterministic, yours needn't be.
 
 ## Dictation (tablet-first, no keyboard needed)

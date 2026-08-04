@@ -787,3 +787,20 @@ fridge/freezer on, net positive), Park restoring 110V + pack mark, ±0s
 take-to-take drift. Full regression green (p1/p2/p4/p5/p6/p8/p9).
 NOTE: the shot-list docx (Technical Notes + the 2:01–2:23 beats) still
 describes the two-stage version — flagged to Frank for a rev.
+
+---
+
+## 2026-08-03 — Shot-list docx rev'd to the three-stage shed
+
+The open flag from P12b is closed: `OneDrive\VanGuard\
+VanGuard_Scripts_ShotList.docx` now describes the three-stage ladder.
+Technical Notes rewritten to the verified clock (crossing +20s, stages
++28/+40/+52s, chip +53s, recovery +60s; fast variant +12 / +19/+31/+43),
+including the inverter-on / e-bike-chargers opening state and the Park
+reset restoring the 110V circuit + pack mark. Cut A gains a STAGE 3 beat
+at 2:13–2:23 ("E-bikes, you're charging on tomorrow's sunshine"), the
+PROTECTED / voice / closing beats slide back ~10s, runtime ~2:57 → ~3:07.
+Cut B's shed beat now names all three stages. FILMING.md's three stale
+references (take span, "after Stage 2" voice beat, "two-stage shed" in
+story mode) fixed to match. Backup of the pre-rev docx in the session
+scratchpad.
