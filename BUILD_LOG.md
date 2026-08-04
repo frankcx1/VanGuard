@@ -804,3 +804,11 @@ Cut B's shed beat now names all three stages. FILMING.md's three stale
 references (take span, "after Stage 2" voice beat, "two-stage shed" in
 story mode) fixed to match. Backup of the pre-rev docx in the session
 scratchpad.
+
+**Cut B pacing (Frank's call):** Cut A may grow to ~3:07 — "if it's
+compelling people will watch it" — but the LinkedIn short stays 60–70s.
+Rev'd the docx again: the shed beat keeps all three stages but drops the
+e-bike clause ("Then the whole 110-volt circuit." — the designated trim
+line "Doodles, you can sit up front" kept verbatim), and the closer beat
+trims to 0:52–1:08, dropping "three-minute" (the master isn't one
+anymore). Cut B ~72s → ~68s.
