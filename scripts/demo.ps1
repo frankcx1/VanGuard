@@ -142,20 +142,63 @@ $guardianBlock
 
 Write-Host "== starting poller + api (port $Port) =="
 $env:VANGUARD_CONFIG = $cfg
+# stderr captured per process — a bad API instance is undiagnosable otherwise
+# (uvicorn tracebacks and access logs both land on stderr). See BUILD_LOG
+# 2026-08-03: one instance served 500s on every command endpoint and the
+# evidence was lost with the hidden window.
+$pollerLog = Join-Path $demoDir "poller_stderr.log"
+$apiLog = Join-Path $demoDir "api_stderr.log"
 $poller = Start-Process -FilePath $py -ArgumentList "-m", "poller", "--config", $cfg `
-    -WorkingDirectory $repo -WindowStyle Hidden -PassThru
-$api = Start-Process -FilePath $py -ArgumentList "-m", "uvicorn", "api.main:app", "--port", "$Port" `
-    -WorkingDirectory $repo -WindowStyle Hidden -PassThru
+    -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardError $pollerLog -PassThru
+
+function Start-Api {
+    Start-Process -FilePath $py -ArgumentList "-m", "uvicorn", "api.main:app", "--port", "$Port" `
+        -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardError $apiLog -PassThru
+}
+function Wait-Api {
+    $deadline = (Get-Date).AddSeconds(60)
+    do {
+        Start-Sleep -Milliseconds 500
+        try { $up = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$Port/api/status" -TimeoutSec 2).StatusCode -eq 200 }
+        catch { $up = $false }
+    } until ($up -or (Get-Date) -gt $deadline)
+    $up
+}
+function Test-CommandPath {
+    # The probe must be a no-op: cooktop-off is idempotent in every scenario
+    # and take (cooktop always starts off). It still exercises the full path
+    # the buttons use — validation, enqueue, audit.
+    foreach ($i in 1..3) {
+        try {
+            $r = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/appliance" -Method Post `
+                -ContentType "application/json" -Body '{"name":"cooktop","on":false}' -TimeoutSec 5
+            if ($r.queued) { return $true }
+        } catch { Start-Sleep -Milliseconds 700 }
+    }
+    $false
+}
+
+$api = Start-Api
 "$($poller.Id)`n$($api.Id)" | Out-File $pidFile
 
 Write-Host "== waiting for API =="
-$deadline = (Get-Date).AddSeconds(60)
-do {
+if (-not (Wait-Api)) { Write-Error "API did not come up (see $apiLog)"; exit 1 }
+
+Write-Host "== smoke-testing the command path =="
+if (-not (Test-CommandPath)) {
+    # Keep the failing instance's stderr for diagnosis, then try once more.
+    Write-Warning "command endpoints failing - restarting the API once (failed log: $apiLog.failed)"
+    Stop-Process -Id $api.Id -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
-    try { $ok = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$Port/api/status" -TimeoutSec 2).StatusCode -eq 200 }
-    catch { $ok = $false }
-} until ($ok -or (Get-Date) -gt $deadline)
-if (-not $ok) { Write-Error "API did not come up"; exit 1 }
+    try { Move-Item -Force $apiLog "$apiLog.failed" -ErrorAction Stop } catch {}
+    $api = Start-Api
+    "$($poller.Id)`n$($api.Id)" | Out-File $pidFile
+    if (-not (Wait-Api)) { Write-Error "API did not come back (see $apiLog)"; exit 1 }
+    if (-not (Test-CommandPath)) {
+        Write-Error "command endpoints still failing after an API restart - check $apiLog and $apiLog.failed"
+        exit 1
+    }
+}
 
 Write-Host "== pre-warming the model (first load takes ~15s GPU / ~90s NPU) =="
 try {

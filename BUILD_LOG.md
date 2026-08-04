@@ -837,3 +837,14 @@ endpoints (cooktop/ebikes/inverter) until the process was restarted —
 same instance whose model pre-warm 500'd. Same family as the documented
 startup race; couldn't capture the traceback (launcher discards stderr).
 If it recurs, start uvicorn with `-RedirectStandardError` first.
+
+**Launcher hardened (same day):** demo.ps1 now captures poller + API
+stderr to `sim\captures\demo\*_stderr.log` and smoke-tests the command
+path (an idempotent cooktop-off through `/api/appliance` — the same
+validation → enqueue → audit path every button uses) before printing
+READY. On failure it keeps the bad instance's log as `.failed`, restarts
+the API once, and re-tests; still failing = hard exit, no READY. So a
+bad-instance day can't reach a take: READY now means the buttons work.
+Verified live: relaunch green, smoke 200, and the model pre-warm came up
+clean too (the smoke test's settling time seems to help that race).
+FILMING.md troubleshooting updated.

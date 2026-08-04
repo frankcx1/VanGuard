@@ -136,6 +136,9 @@ device · N local tool calls · 0 external calls"* receipt under the answer.
   the launcher's READY line should say `take=forgot_switch`
 - Patrol text ≠ live tiles → hit **Check now** (patrol is up to 5 min old)
 - ⚠ STALE chip → poller died: `demo.ps1 -Stop` then relaunch
+- Buttons flip back / commands fail → shouldn't happen if READY printed
+  (the launcher smoke-tests the command path and auto-restarts the API
+  once); tracebacks in `sim\captures\demo\api_stderr.log` (+ `.failed`)
 - Model feels slow → NPU is ~727ms to first token (authentic); drop `-NPU`
   for GPU snappiness (rail then honestly says GPU)
 - Fresh stage between scenes: `demo.ps1 -Stop` + relaunch (~2 min)
