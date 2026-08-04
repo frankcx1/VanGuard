@@ -901,3 +901,26 @@ together, so the visible text never arrived; raised to 8000 (+ client
 timeout 180s). Verified live: "closest diesel" answered in ~65s by
 claude-opus-5 with real Kirkland stations, big-van access notes, and
 verified/unverified flags; both calls audited as device=CLOUD.
+
+---
+
+## 2026-08-03 — Trip map: the track + POIs, no tiles, no cloud
+
+Frank's long-shot ask ("map of where we are, or better, where we've been
+today") — answered with the honest offline version: no basemap (map tiles
+mean a tile server; OSM's policy also forbids bulk scraping), but a
+to-scale schematic that's all our own data. `/api/trip` now returns
+`track` (today's GPS fixes, paired + strided, teleports left in) and
+POIs carry lat/lon. The Trip tile renders an SVG map: equirectangular
+projection in miles (cos-lat corrected), today's track as a polyline
+broken at impossible jumps (Park teleports don't draw as roads), start
+ring, van dot with halo drawn last, labeled POI dots for whatever falls
+inside the view, auto-fit bounds with a 3.2mi minimum span so the parked
+view shows the neighborhood, round-number scale bar, north arrow. Tabs
+view only — the classic grid keeps its compact POI list.
+
+Verified live (headless frames): parked = van centered among labeled
+Kirkland POIs, 0.5mi scale bar; after a 45s test drive = blue track
+growing eastward from the start ring, miles ticking, and the Guardian
+overlay correctly riding OVER the Trip tab when Stage 2 hit mid-drive.
+Park + reset restored the take. verify_p5 50/50, verify_take 53/53.

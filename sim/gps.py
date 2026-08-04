@@ -60,7 +60,8 @@ def nearby_pois(lat: float, lon: float, radius_mi: float = 10.0,
         d = haversine_mi(lat, lon, p["lat"], p["lon"])
         if d <= radius_mi:
             out.append({"name": p["name"], "type": p["type"],
-                        "dist_mi": round(d, 1), "note": p["note"]})
+                        "dist_mi": round(d, 1), "note": p["note"],
+                        "lat": p["lat"], "lon": p["lon"]})
     out.sort(key=lambda p: p["dist_mi"])
     return out[:limit]
 

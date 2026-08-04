@@ -534,12 +534,20 @@ def create_app(cfg: dict | None = None) -> FastAPI:
             return stamp({"fix": None})
         lat_hist = await app.state.store.history("gps", "lat", 24 * 3600)
         lon_hist = await app.state.store.history("gps", "lon", 24 * 3600)
+        # Today's track for the Trip-tab map: paired fixes, strided to a
+        # renderable count. Teleports (Park resets) are left in — the client
+        # breaks the polyline on impossible jumps rather than joining them.
+        lons = dict(lon_hist)
+        fixes = [(ts, lat, lons[ts]) for ts, lat in lat_hist if ts in lons]
+        stride = max(1, len(fixes) // 400)
+        track = [[round(la, 5), round(lo, 5)] for _, la, lo in fixes[::stride]]
         return stamp({
             "fix": {"lat": gps.get("lat"), "lon": gps.get("lon"),
                     "speed_mph": gps.get("speed_mph"),
                     "heading_deg": gps.get("heading_deg"),
                     "moving": (gps.get("speed_mph") or 0) > 2.0},
             "miles_today": track_miles(lat_hist, lon_hist),
+            "track": track,
             "nearby": nearby_pois(gps["lat"], gps["lon"], radius_mi, limit),
         })
 

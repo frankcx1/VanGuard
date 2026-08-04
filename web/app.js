@@ -1051,6 +1051,104 @@ async function refreshTrip() {
     `<li>${escapeHtml(p.name)} <span class="dist">· ${p.type} · ${p.dist_mi} mi</span></li>`
   ).join("");
   renderArea(t.nearby ?? []);
+  renderTripMap(t.track ?? [], t.nearby ?? [], t.fix);
+}
+
+/* ---- Trip map: today's track + labeled POIs, fully offline -------------
+   No basemap (map tiles would mean the cloud) — an honest schematic:
+   the GPS track drawn to scale, the offline POIs plotted around it,
+   north up, with a scale bar. Same SVG approach as the sparklines. */
+
+function renderTripMap(track, pois, fix) {
+  const host = $("trip-map");
+  if (!host) return;
+  const latRef = fix?.lat ?? track[0]?.[0] ?? pois[0]?.lat;
+  if (latRef == null) { host.innerHTML = ""; return; }
+  const W = 600, H = 660, PAD = 40;
+  // Equirectangular, in miles: 1° lat ≈ 69 mi; 1° lon shrinks with cos(lat).
+  const KY = 69.0, KX = 69.0 * Math.cos(latRef * Math.PI / 180);
+  const mi = ([la, lo]) => [lo * KX, la * KY];   // [x east, y north]
+
+  // View bounds follow the track + van; a minimum span keeps the parked
+  // view wide enough to show the neighborhood. POIs inside the view are
+  // drawn; far ones are left to the list.
+  const anchors = track.map(mi);
+  if (fix) anchors.push(mi([fix.lat, fix.lon]));
+  let xs = anchors.map(p => p[0]), ys = anchors.map(p => p[1]);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const MIN_SPAN = 3.2, GROW = 1.3;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  let spanX = Math.max((x1 - x0) * GROW, MIN_SPAN);
+  let spanY = Math.max((y1 - y0) * GROW, MIN_SPAN);
+  const s = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
+  const X = p => W / 2 + (p[0] - cx) * s;
+  const Y = p => H / 2 - (p[1] - cy) * s;   // north up
+  const inView = p => X(p) > PAD / 2 && X(p) < W - PAD / 2
+                   && Y(p) > PAD / 2 && Y(p) < H - PAD / 2;
+
+  const parts = [];
+
+  // Track, broken into segments at impossible jumps (Park teleports home).
+  let seg = [];
+  const flush = () => {
+    if (seg.length > 1) {
+      parts.push(`<polyline points="${seg.join(" ")}" fill="none" ` +
+        `stroke="var(--c-soc)" stroke-width="2.5" stroke-linejoin="round" ` +
+        `stroke-linecap="round" vector-effect="non-scaling-stroke"/>`);
+    }
+    seg = [];
+  };
+  let prev = null;
+  for (const p of track.map(mi)) {
+    if (prev && Math.hypot(p[0] - prev[0], p[1] - prev[1]) > 2.0) flush();
+    seg.push(`${X(p).toFixed(1)},${Y(p).toFixed(1)}`);
+    prev = p;
+  }
+  flush();
+
+  // Start-of-day marker on the first fix.
+  if (track.length) {
+    const p0 = mi(track[0]);
+    parts.push(`<circle cx="${X(p0).toFixed(1)}" cy="${Y(p0).toFixed(1)}" r="5" ` +
+      `fill="none" stroke="var(--c-soc)" stroke-width="2"/>`);
+  }
+
+  // POIs inside the view, labeled.
+  for (const p of pois) {
+    if (p.lat == null) continue;
+    const pt = mi([p.lat, p.lon]);
+    if (!inView(pt)) continue;
+    const px = X(pt).toFixed(1), py = Y(pt).toFixed(1);
+    parts.push(`<circle cx="${px}" cy="${py}" r="3.5" fill="var(--muted)"/>`);
+    const anchor = X(pt) > W - 150 ? `text-anchor="end" x="${(X(pt) - 8).toFixed(1)}"`
+                                   : `x="${(X(pt) + 8).toFixed(1)}"`;
+    parts.push(`<text ${anchor} y="${(Y(pt) + 4.5).toFixed(1)}" class="tm-label">` +
+      `${escapeHtml(p.name)}</text>`);
+  }
+
+  // The van: filled dot with a ring, drawn last so nothing covers it.
+  if (fix) {
+    const pv = mi([fix.lat, fix.lon]);
+    parts.push(`<circle cx="${X(pv).toFixed(1)}" cy="${Y(pv).toFixed(1)}" r="9" ` +
+      `fill="none" stroke="var(--c-soc)" stroke-width="2" opacity="0.5"/>`);
+    parts.push(`<circle cx="${X(pv).toFixed(1)}" cy="${Y(pv).toFixed(1)}" r="5" ` +
+      `fill="var(--c-soc)" stroke="var(--ink)" stroke-width="1.5"/>`);
+  }
+
+  // Scale bar (nice round miles sized to the current zoom) + north arrow.
+  const nice = [0.25, 0.5, 1, 2, 5, 10, 25].find(n => n * s >= 60 && n * s <= 170)
+    ?? 0.25;
+  const bx = PAD / 2 + 4, by = H - 16;
+  parts.push(`<line x1="${bx}" y1="${by}" x2="${(bx + nice * s).toFixed(1)}" y2="${by}" ` +
+    `stroke="var(--ink-2)" stroke-width="2"/>`);
+  parts.push(`<text x="${bx}" y="${by - 8}" class="tm-meta">${nice} mi</text>`);
+  parts.push(`<text x="${W - 26}" y="26" class="tm-meta" text-anchor="middle">N</text>`);
+  parts.push(`<path d="M ${W - 26} 32 l 5 14 l -5 -4 l -5 4 Z" fill="var(--muted)"/>`);
+
+  host.innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">` +
+    parts.join("") + `</svg>`;
 }
 
 /* ---- Trip tab: the area overview + on-demand cloud expert ------------------ */
