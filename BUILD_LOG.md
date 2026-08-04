@@ -812,3 +812,28 @@ e-bike clause ("Then the whole 110-volt circuit." — the designated trim
 line "Doodles, you can sit up front" kept verbatim), and the closer beat
 trims to 0:52–1:08, dropping "three-minute" (the master isn't one
 anymore). Cut B ~72s → ~68s.
+
+---
+
+## 2026-08-03 — Fix: the 🚲 button never actually worked
+
+Frank noticed the E-bikes node missing from Power Flow. Two findings:
+
+1. **Not a bug, a launch mode**: the node only renders when the sim
+   reports ebike telemetry, which latches on via a take profile or the
+   appliance command. The post-crash relaunch used plain `sunny_midday`
+   — relaunched with `-Scenario driveway -Take forgot_switch` and the
+   node is back from frame one.
+2. **A real bug underneath**: `ApplianceCommand` in api/main.py still
+   validated `name: Literal["cooktop", "microwave"]` — never extended
+   in P12b, so the UI's `POST /api/appliance {"name":"ebikes"}` got a
+   422 and the optimistic toggle silently reverted. The take never
+   exposed it because takes start with the chargers already on in the
+   sim. Added `"ebikes"` to the literal; verified the full round trip
+   live (off → 0W, on → charging @ 90W, pack pinned at 58).
+
+Also observed: one API instance served 500s on **all** command
+endpoints (cooktop/ebikes/inverter) until the process was restarted —
+same instance whose model pre-warm 500'd. Same family as the documented
+startup race; couldn't capture the traceback (launcher discards stderr).
+If it recurs, start uvicorn with `-RedirectStandardError` first.

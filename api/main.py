@@ -55,7 +55,7 @@ class ChargeSourceCommand(BaseModel):
 
 
 class ApplianceCommand(BaseModel):
-    name: Literal["cooktop", "microwave"]
+    name: Literal["cooktop", "microwave", "ebikes"]
     on: bool
 
 
