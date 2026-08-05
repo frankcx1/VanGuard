@@ -43,6 +43,14 @@ healthy engine.
 
 `forgot_switch_fast`: crossing ~+12s, stages ~+19s / ~+31s / ~+43s.
 
+**The human fix (optional beat):** tapping **🚐 Alternator** in Power Flow
+is the real-life recovery — it starts/uses the engine AND flips the
+forgotten seat switch, so ~500W flows into the house battery and the
+node lights. Works mid-drive (house input jumps from 0W) or parked
+(engine idles). Do it *after* the Guardian story plays out, if at all —
+flipping it before the 20% crossing prevents the crossing. Park
+re-forgets the switch for the next take.
+
 **⏸ Park fully resets the take:** SOC back to its mark (re-pinned), A/C
 off, dish back online *and warm* (no 45s re-boot between takes), inverter
 back on with the e-bike pack re-pinned at 58%, Guardian episodes/cooldowns

@@ -954,3 +954,13 @@ a rehearsal tap leaked into the next take — a persisted alternator=off
 would keep the engine dead through the whole drive (killing the
 "Mercedes is happy" beat) and solar=off would speed the crossing. Park
 now resets solar/alternator/shore to auto. verify_take 53/53.
+
+**The human fix (Frank's ask, same day):** turning the Alternator on is
+now possible mid-demo — because that's literally what he did the two
+times he drained the battery. Tapping 🚐 Alternator is a human action,
+so in addition to the engine override it flips the forgotten seat
+switch: ~390-500W flows to the house battery, the node lights, the
+crisis ends. Verified parked (engine idles, 397W) and mid-drive (house
+input jumps 0→388W); Park re-forgets the switch so the next take opens
+broken. FILMING.md documents it as an optional beat — after the
+Guardian story, not before the crossing. verify_take 53/53.

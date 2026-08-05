@@ -358,6 +358,12 @@ class VanModel:
             if source not in self.switches:
                 return False
             self.switches[source] = bool(cmd.get("enabled"))
+            if source == "alternator" and cmd.get("enabled"):
+                # Turning the alternator on is a human action, so it also
+                # plays the real-life fix: flipping the forgotten seat
+                # switch (exactly what ends the drained-battery story).
+                # Park re-forgets it, so the next take opens broken again.
+                self.charge_switch_on = True
             return True
         if cmd.get("target") == "appliance":
             # Known appliances only — an arbitrary-watts command would be an
