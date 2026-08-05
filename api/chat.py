@@ -176,8 +176,13 @@ async def _snapshot(runner: ToolRunner, device: str, trace: list,
                     question: str = "") -> str:
     parts = {}
     for name in SNAPSHOT_TOOLS:
-        result = await runner.call(name, {}, device=device)
-        trace.append({"tool": name, "args": {}, "result": result, "auto": True})
+        # The guardian log is the one snapshot domain that grows with use —
+        # a filming morning of takes overflowed the NPU's static prompt
+        # (2339 > 2048 tokens). Three events cover the why-question; the
+        # model can still call the tool explicitly for more.
+        args = {"limit": 3} if name == "get_guardian_log" else {}
+        result = await runner.call(name, args, device=device)
+        trace.append({"tool": name, "args": args, "result": result, "auto": True})
         parts[name.removeprefix("get_")] = result
     return json.dumps(parts, separators=(",", ":"))
 

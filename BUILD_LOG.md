@@ -964,3 +964,20 @@ crisis ends. Verified parked (engine idles, 397W) and mid-drive (house
 input jumps 0→388W); Park re-forgets the switch so the next take opens
 broken. FILMING.md documents it as an optional beat — after the
 Guardian story, not before the crossing. verify_take 53/53.
+
+---
+
+## 2026-08-05 — SHOOT DAY: the guardian log ate the NPU prompt window
+
+Mid-shoot 500s on AI queries. Not Monday's db lock — the NPU pipeline's
+static prompt ceiling: `MAX_PROMPT_LEN 2048, 2339 passed`. Root cause:
+the chat snapshot auto-fetches get_guardian_log (default 8 events); at
+launch the log is empty, but a filming morning of takes fattened it —
+three-stage receipts pushed the every-request prompt over the wall, so
+EVERY model-path question 500'd while deterministic paths kept working
+(that split was the tell). Two-part fix: snapshot fetches limit=3
+guardian events (the model can still call the tool for more), and
+MAX_PROMPT_LEN raised to 4096 (~60s one-time NPU recompile). API-only
+restart preserved the poller's take state mid-shoot. Verified on NPU:
+4-question multi-turn conversation green (5-11s per answer after the
+compile), why-question answered honestly from the log.

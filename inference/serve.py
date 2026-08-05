@@ -22,7 +22,9 @@ DEFAULT_DEVICE_ORDER = ("NPU", "GPU", "CPU")
 # NPU pipelines use static shapes; these bound them (PLAN.md §6 context
 # discipline: system + tools ≤ 800 tokens, tool results ≤ 400, history rest).
 NPU_PIPELINE_CONFIG = {
-    "MAX_PROMPT_LEN": 2048,
+    # 4096: headroom over the ~2.3k prompts seen after a morning of filmed
+    # takes fattened the snapshot's guardian log (2048 overflowed mid-shoot).
+    "MAX_PROMPT_LEN": 4096,
     "MIN_RESPONSE_LEN": 128,
 }
 
