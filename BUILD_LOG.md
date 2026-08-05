@@ -924,3 +924,21 @@ Kirkland POIs, 0.5mi scale bar; after a 45s test drive = blue track
 growing eastward from the start ring, miles ticking, and the Guardian
 overlay correctly riding OVER the Trip tab when Stage 2 hit mid-drive.
 Park + reset restored the take. verify_p5 50/50, verify_take 53/53.
+
+---
+
+## 2026-08-04 — Overnight soak found a real one: database is locked
+
+Frank's rehearsal-morning report: AI queries 500ing ("Internal Server
+Error" body breaking the UI's JSON parse). The stderr log (yesterday's
+hardening paying off) had it: `sqlite3.OperationalError: database is
+locked` on the chat endpoint's audit write, plus "guardian evaluation
+failed" and one failed patrol. Root cause: the stack had run overnight
+at the take's 1s cadence — WAL grew to ~52MB against a 56MB db, and
+Store.open never set busy_timeout, so SQLite's default of ZERO made any
+checkpoint pause an instant hard failure for concurrent writers.
+
+Fix: `PRAGMA busy_timeout=5000` in Store.open (both processes get it).
+FILMING.md: launch fresh on shoot day, don't reuse an overnight stack.
+Clean relaunch reseeded the db; chat verified live. p1 storage
+regression green.

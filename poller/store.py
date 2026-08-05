@@ -91,6 +91,11 @@ class Store:
         self._db = await aiosqlite.connect(self.db_path)
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("PRAGMA synchronous=NORMAL")
+        # Default busy_timeout is 0: any WAL-checkpoint pause makes concurrent
+        # writers fail instantly with "database is locked" (seen after a ~12h
+        # overnight run at the take's 1s cadence grew the WAL to ~50MB). Wait
+        # out short lock windows instead of erroring.
+        await self._db.execute("PRAGMA busy_timeout=5000")
         await self._db.executescript(SCHEMA)
         await self._db.commit()
         return self

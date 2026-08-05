@@ -150,3 +150,6 @@ device · N local tool calls · 0 external calls"* receipt under the answer.
 - Model feels slow → NPU is ~727ms to first token (authentic); drop `-NPU`
   for GPU snappiness (rail then honestly says GPU)
 - Fresh stage between scenes: `demo.ps1 -Stop` + relaunch (~2 min)
+- **Launch fresh on the day of the shoot** — don't reuse a stack left
+  running overnight. The take's 1s poll cadence grows the database all
+  night; a morning relaunch reseeds it clean (~2 min)
