@@ -422,6 +422,12 @@ class VanModel:
                     self.network.set_mode("starlink")
                     self.network.force_online()
                     self.charge_switch_on = not self.take.forgot_charge_switch
+                    # Charge-source overrides back to auto too — a rehearsal
+                    # tap on Solar/Alternator/Shore must not leak into the
+                    # next take (a persisted alternator=off would keep the
+                    # engine dead through the whole drive).
+                    self.switches = {"solar": None, "alternator": None,
+                                     "shore": None}
                     if self.take.inverter_on:
                         self.inverter_on = True
                     if self.take.ebikes_charging:

@@ -942,3 +942,15 @@ Fix: `PRAGMA busy_timeout=5000` in Store.open (both processes get it).
 FILMING.md: launch fresh on shoot day, don't reuse an overnight stack.
 Clean relaunch reseeded the db; chat verified live. p1 storage
 regression green.
+
+**Alternator question → Park-reset gap (same day):** Frank asked why the
+Alternator node won't light after Solar/Shore off + Alternator on. By
+design in a take: the node reflects measured watts to the house battery
+(honest indicator), the tap is an engine override — and with the seat
+switch "forgotten" the DC-DC path is dead, so the engine idles (chassis
+tile shows it) while the node stays dark. THE STORY. But the dig found a
+real gap: Park's take reset didn't clear the charge-source overrides, so
+a rehearsal tap leaked into the next take — a persisted alternator=off
+would keep the engine dead through the whole drive (killing the
+"Mercedes is happy" beat) and solar=off would speed the crossing. Park
+now resets solar/alternator/shore to auto. verify_take 53/53.
